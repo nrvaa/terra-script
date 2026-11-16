@@ -1905,6 +1905,8 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; }
   text-align: right;
 }
 .land-fadeout { font: 700 14px/1 'Courier Prime', 'Courier New', monospace; letter-spacing: 0.1em; color: var(--text); }
+.land-gh { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); text-decoration: none; }
+.land-gh:hover, .land-gh:focus-visible { color: var(--accent); text-decoration: underline; text-underline-offset: 3px; }
 @media (max-width: 1240px) { .land-fade { display: none; } }
 @media (max-width: 860px) {
   .land-hero { grid-template-columns: 1fr; padding-top: 40px; gap: 16px; }

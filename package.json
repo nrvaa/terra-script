@@ -1,7 +1,19 @@
 {
-  "name": "tewrite",
+  "name": "terra-script",
   "type": "module",
-  "version": "0.0.1",
+  "version": "1.0.1",
+  "description": "A free, open-source screenwriting app that runs in the browser or as a Windows desktop app.",
+  "license": "MIT",
+  "author": "nrvaa",
+  "homepage": "https://github.com/nrvaa/terra-script#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/nrvaa/terra-script.git"
+  },
+  "bugs": {
+    "url": "https://github.com/nrvaa/terra-script/issues"
+  },
+  "private": true,
   "engines": {
     "node": ">=22.23.4"
   },
