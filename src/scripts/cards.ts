@@ -91,7 +91,7 @@ export function createCardsBoard(
       const speakers = [...new Set(blocks.slice(u.start, u.end).filter((x) => x.type === 'character').map((x) => characterName(x.text)).filter(Boolean))];
       const shown = speakers.slice(0, 3).join(', ');
       const more = speakers.length > 3 ? ` +${speakers.length - 3}` : '';
-      parts.push(`<article class="scard" draggable="true" data-unit="${ui}" data-block="${u.start}"${b.color ? ` data-color="${b.color}"` : ''}>
+      parts.push(`<article class="scard" draggable="true" data-unit="${ui}" data-block="${u.start}"${b.color ? ` data-color="${esc(b.color)}"` : ''}>
         <div class="scard-top">
           <span class="grip" aria-hidden="true">${ICON_GRIP}</span>
           ${opts.sceneNumbers() ? `<span class="scard-num">${sceneNo}</span>` : ''}

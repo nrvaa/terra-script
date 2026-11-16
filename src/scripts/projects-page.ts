@@ -6,7 +6,9 @@ import {
   importFile,
   listProjects,
   loadProject,
+  markBackedUp,
   migrateLegacy,
+  needsBackup,
   renameProject,
   serializeTerra,
   type ProjectMeta,
@@ -114,6 +116,16 @@ function visibleProjects(): ProjectMeta[] {
 const MORE_ICON =
   '<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><circle cx="5" cy="12" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="19" cy="12" r="1.8"/></svg>';
 
+/** Backup status line: warns when the project only lives in this browser. */
+function backupBadge(p: ProjectMeta): string {
+  if (needsBackup(p)) {
+    const label = p.backedUpAt ? t('proj.bkStale') : t('proj.bkNever');
+    return `<p class="proj-bk is-warn"><i aria-hidden="true"></i>${esc(label)}</p>`;
+  }
+  if (p.backedUpAt) return `<p class="proj-bk is-ok"><i aria-hidden="true"></i>${esc(t('proj.bkOk', { time: relTime(p.backedUpAt) }))}</p>`;
+  return '';
+}
+
 function card(p: ProjectMeta): string {
   const title = displayTitle(p);
   const pages = t(p.pages === 1 ? 'st.page' : 'st.pages', { n: p.pages });
@@ -130,6 +142,7 @@ function card(p: ProjectMeta): string {
         <h2 class="proj-name">${esc(title)}</h2>
         <p class="proj-meta">${esc(t('proj.edited', { time: relTime(p.updatedAt) }))}</p>
         <p class="proj-meta">${esc(pages)} · ${esc(scenes)}</p>
+        ${backupBadge(p)}
       </div>
     </a>
     <button type="button" class="proj-more" data-more="${esc(p.id)}" aria-haspopup="menu" aria-label="${esc(t('proj.more', { name: title }))}">${MORE_ICON}</button>
@@ -228,6 +241,9 @@ async function downloadProject(id: string) {
   a.click();
   a.remove();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+  await markBackedUp(id);
+  toast(t('bk.saved'));
+  await refresh();
 }
 
 const renameDialog = $<HTMLDialogElement>('#dlg-rename');

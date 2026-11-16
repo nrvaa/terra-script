@@ -5,6 +5,7 @@ import { applyPageView } from './page-view';
 import { hideLoader, initThemeSwitches, syncThemeSwitches, themeTransition } from './ui-effects';
 import { buildReport, characterStats, reportToText } from './report';
 import { createCardsBoard } from './cards';
+import { renameCharacter } from './rename';
 import { createTakesPanel } from './takes';
 import {
   clearUnsaved,
@@ -12,9 +13,14 @@ import {
   editorUrl,
   importFile,
   loadProject,
+  markBackedUp,
   migrateLegacy,
+  requestPersistence,
   saveProject,
   serializeTerra,
+  setBackupReminder,
+  shouldRemindBackup,
+  type ProjectMeta,
   takeUnsaved,
   writeUnsaved,
 } from './projects';
@@ -438,7 +444,7 @@ function renderSidebar() {
         }
       }
       items.push(`<li><button class="nav-scene" data-block="${i}">
-        <span class="nav-num">${n}${b.color ? `<i class="nav-dot" data-color="${b.color}"></i>` : ''}</span>${takeDot(b.takes)}
+        <span class="nav-num">${n}${b.color ? `<i class="nav-dot" data-color="${esc(b.color)}"></i>` : ''}</span>${takeDot(b.takes)}
         <span class="min-w-0"><span class="nav-head">${esc(b.text.toUpperCase()) || `<em>${t('nav.untitledScene')}</em>`}</span>
         ${synopsis ? `<span class="nav-syn">${esc(synopsis)}</span>` : ''}</span></button></li>`);
     } else if (b.type === 'section' || b.type === 'act') {
@@ -457,7 +463,7 @@ function renderSidebar() {
     ? chars
         .map(
           (c) => `<li class="char-row">
-          <div class="flex justify-between gap-2"><span class="font-semibold truncate">${esc(c.name)}</span><span class="text-muted shrink-0">${t('char.lines', { n: c.dialogues })}</span></div>
+          <div class="flex items-center justify-between gap-2"><span class="font-semibold truncate">${esc(c.name)}</span><span class="flex items-center gap-1 shrink-0"><span class="text-muted">${t('char.lines', { n: c.dialogues })}</span><button type="button" class="char-rename" data-rename="${esc(c.name)}" title="${esc(t('rc.btn', { name: c.name }))}" aria-label="${esc(t('rc.btn', { name: c.name }))}"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/></svg></button></span></div>
           <div class="bar"><span style="width:${(c.dialogues / max) * 100}%"></span></div>
           <div class="text-muted text-xs">${t('char.meta', { w: c.words, s: c.scenes.size })}</div></li>`,
         )
@@ -664,6 +670,169 @@ function fileBase() {
   return (titlePage.title.trim() || t('file.default')).replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '-').toLowerCase();
 }
 
+/* -------------------------------------------------------------------- */
+/* Backups: one-time storage notice + reminder to download a .terra copy */
+/* -------------------------------------------------------------------- */
+
+const NOTICE_KEY = 'tewrite:storageNotice';
+const SNOOZE_PREFIX = 'tewrite:bkSnooze:';
+const SNOOZE_MS = 24 * 60 * 60 * 1000;
+
+const lsGet = (k: string) => {
+  try {
+    return localStorage.getItem(k);
+  } catch {
+    return null;
+  }
+};
+const lsSet = (k: string, v: string) => {
+  try {
+    localStorage.setItem(k, v);
+  } catch {
+    /* ignore */
+  }
+};
+
+function relTime(ts: number): string {
+  const rtf = new Intl.RelativeTimeFormat(locale(), { numeric: 'auto' });
+  const s = Math.round((ts - Date.now()) / 1000);
+  const abs = Math.abs(s);
+  if (abs < 45) return rtf.format(0, 'second');
+  if (abs < 3600) return rtf.format(Math.round(s / 60), 'minute');
+  if (abs < 86400) return rtf.format(Math.round(s / 3600), 'hour');
+  return rtf.format(Math.round(s / 86400), 'day');
+}
+
+/** Save, download the complete project as .terra and remember the backup. */
+async function downloadTerra() {
+  await saveNow();
+  download(`${fileBase()}.terra`, serializeTerra(currentDoc()), 'application/json');
+  if (projectId) {
+    try {
+      await markBackedUp(projectId);
+    } catch {
+      /* the file was still downloaded */
+    }
+  }
+  requestPersistence();
+  toast(t('bk.saved'));
+}
+
+function showStorageNotices(meta: ProjectMeta) {
+  // First visit: explain where scripts live (and ask the browser to keep them).
+  if (lsGet(NOTICE_KEY) !== '1') {
+    const d = $<HTMLDialogElement>('#dlg-first');
+    d.addEventListener(
+      'close',
+      () => {
+        lsSet(NOTICE_KEY, '1');
+        requestPersistence();
+      },
+      { once: true },
+    );
+    d.showModal();
+    return;
+  }
+  if (!projectId || !shouldRemindBackup(meta)) return;
+  if (Number(lsGet(SNOOZE_PREFIX + projectId) ?? 0) > Date.now()) return;
+
+  const d = $<HTMLDialogElement>('#dlg-backup');
+  $('#bk-body').textContent = meta.backedUpAt ? t('bk.stale', { time: relTime(meta.backedUpAt) }) : t('bk.never');
+  d.returnValue = '';
+  d.addEventListener(
+    'close',
+    () => {
+      if (d.returnValue === 'download') downloadTerra();
+      else if (d.returnValue !== 'off') lsSet(SNOOZE_PREFIX + projectId, String(Date.now() + SNOOZE_MS));
+    },
+    { once: true },
+  );
+  d.showModal();
+}
+
+$('#bk-off').addEventListener('click', async () => {
+  if (projectId) await setBackupReminder(projectId, false);
+  $<HTMLDialogElement>('#dlg-backup').close('off');
+});
+
+/* -------------------------------------------------------------------- */
+/* Rename character                                                       */
+/* -------------------------------------------------------------------- */
+
+const rcDialog = $<HTMLDialogElement>('#dlg-rename-char');
+const rcFrom = $<HTMLSelectElement>('#rc-from');
+const rcTo = $<HTMLInputElement>('#rc-to');
+const rcInText = $<HTMLInputElement>('#rc-intext');
+
+/** The speaker of the dialogue the cursor is in, if any. */
+function speakerAtCursor(): string {
+  const blocks = editor.getBlocks();
+  for (let i = editor.currentIndex(); i >= 0 && i < blocks.length; i--) {
+    const b = blocks[i];
+    if (b.type === 'character') return characterName(b.text);
+    if (!['dialogue', 'parenthetical', 'lyrics'].includes(b.type)) break;
+  }
+  return '';
+}
+
+function updateRenamePreview() {
+  const from = rcFrom.value;
+  const to = rcTo.value.trim();
+  const submit = rcDialog.querySelector<HTMLButtonElement>('[type=submit]')!;
+  const same = !to || characterName(to) === from;
+  submit.disabled = same;
+  if (same) {
+    $('#rc-preview').textContent = '';
+    return;
+  }
+  const r = renameCharacter(editor.getBlocks(), from, to, { inText: rcInText.checked });
+  let text = rcInText.checked ? t('rc.preview', { cues: r.cues, mentions: r.mentions }) : t('rc.previewCues', { cues: r.cues });
+  const target = characterName(to);
+  if ([...rcFrom.options].some((o) => o.value === target)) text += ' ' + t('rc.merge', { name: target });
+  $('#rc-preview').textContent = text;
+}
+
+function openRenameChar(name?: string) {
+  editor.flush();
+  const chars = characterStats(editor.getBlocks());
+  if (!chars.length) {
+    toast(t('rc.none'));
+    return;
+  }
+  rcFrom.innerHTML = chars
+    .map((c) => `<option value="${esc(c.name)}">${esc(c.name)} — ${esc(t('char.lines', { n: c.dialogues }))}</option>`)
+    .join('');
+  const pick = name ?? speakerAtCursor();
+  rcFrom.value = chars.some((c) => c.name === pick) ? pick : chars[0].name;
+  rcTo.value = rcFrom.value;
+  updateRenamePreview();
+  rcDialog.showModal();
+  rcTo.focus();
+  rcTo.select();
+}
+
+rcFrom.addEventListener('change', () => {
+  rcTo.value = rcFrom.value;
+  updateRenamePreview();
+  rcTo.focus();
+  rcTo.select();
+});
+rcTo.addEventListener('input', updateRenamePreview);
+rcInText.addEventListener('change', updateRenamePreview);
+rcDialog.querySelector('[data-close]')!.addEventListener('click', () => rcDialog.close());
+$<HTMLFormElement>('#form-rename-char').addEventListener('submit', () => {
+  const from = rcFrom.value;
+  const to = rcTo.value.trim();
+  if (!to || characterName(to) === from) return;
+  const r = renameCharacter(editor.getBlocks(), from, to, { inText: rcInText.checked });
+  editor.replaceBlocks(r.blocks); // one undo step
+  toast(t('rc.done', { from, to: to.toUpperCase() }));
+});
+$('#char-list').addEventListener('click', (e) => {
+  const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-rename]');
+  if (btn) openRenameChar(btn.dataset.rename);
+});
+
 function download(name: string, content: string, type: string) {
   const url = URL.createObjectURL(new Blob([content], { type }));
   const a = document.createElement('a');
@@ -803,7 +972,8 @@ function runExport(c: ExportChoice) {
   const file = `${fileBase()}.${c.format}`;
   try {
     if (c.format === 'terra') {
-      download(file, serializeTerra(currentDoc()), 'application/json');
+      downloadTerra();
+      return;
     } else if (c.format === 'pdf') {
       const blob = buildPdf(blocks, { paper: settings.paper, sceneNumbers: settings.sceneNumbers, titlePage: tp, script: c.script, report });
       downloadBlob(file, blob);
@@ -937,8 +1107,7 @@ const actions: Record<string, () => void> = {
   new: newScript,
   open: () => fileInput.click(),
   'save-terra': () => {
-    editor.flush();
-    download(`${fileBase()}.terra`, serializeTerra(currentDoc()), 'application/json');
+    downloadTerra();
   },
   export: () => openExport(),
   print: printScript,
@@ -985,6 +1154,7 @@ const actions: Record<string, () => void> = {
   'paper-letter': () => ((settings.paper = 'letter'), layoutChanged()),
   'paper-a4': () => ((settings.paper = 'a4'), layoutChanged()),
   takes: toggleTakes,
+  'rename-char': () => openRenameChar(),
   'view-script': () => setView('script'),
   'view-cards': () => setView('cards'),
   'zoom-in': () => setZoom(settings.zoom + 0.1),
@@ -1164,6 +1334,7 @@ async function boot() {
     else openDoc(p.doc);
     lastSavedAt = new Date(p.meta.updatedAt);
     renderSaveStatus();
+    showStorageNotices(p.meta);
   } catch (err) {
     console.error(err);
     saveFailed = true;

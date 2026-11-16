@@ -2242,3 +2242,56 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; }
   .flip-reveal { opacity: 1; transform: none; transition: none; }
   .flip-content { transition: none; }
 }
+/* ------------------------------------------------------------------ */
+/* Backup notices & reminders                                          */
+/* ------------------------------------------------------------------ */
+.notice-dialog { width: min(460px, calc(100vw - 32px)); }
+.notice-icon {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.notice-icon svg { width: 24px; height: 24px; }
+.notice-icon.notice-warn { background: color-mix(in srgb, #e2b203 18%, transparent); color: #a07800; }
+.dark .notice-icon.notice-warn { color: #f5cf4a; }
+.link-btn { font-size: 12.5px; color: var(--muted); text-decoration: underline; text-underline-offset: 2px; }
+.link-btn:hover { color: var(--text); }
+.proj-bk { display: flex; align-items: center; gap: 6px; margin-top: 4px; font-size: 12px; font-weight: 500; }
+.proj-bk i { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.proj-bk.is-warn { color: #a07800; }
+.proj-bk.is-warn i { background: #e2b203; }
+.dark .proj-bk.is-warn { color: #f5cf4a; }
+.proj-bk.is-ok { color: var(--muted); }
+.proj-bk.is-ok i { background: #30a46c; }
+
+/* ------------------------------------------------------------------ */
+/* Rename character                                                    */
+/* ------------------------------------------------------------------ */
+.char-rename {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  color: var(--muted);
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.char-rename svg { width: 13px; height: 13px; }
+.char-row:hover .char-rename, .char-rename:focus-visible { opacity: 1; }
+.char-rename:hover { background: var(--surface-2); color: var(--accent); }
+@media (hover: none) { .char-rename { opacity: 1; } }
+.rc-to { text-transform: uppercase; font-family: 'Courier Prime', monospace; font-weight: 700; }
+.dialog .rc-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  color: var(--text);
+  font-size: 13.5px;
+  font-weight: 400;
+}
+.dialog .rc-check input { margin-top: 3px; width: 16px; height: 16px; accent-color: var(--accent); }

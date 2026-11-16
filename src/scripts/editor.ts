@@ -1,5 +1,6 @@
 import { parseFountain, toFountain } from './fountain';
 import { t, type Key } from './i18n';
+import { parseTerra } from './projects';
 import {
   EMPTY_ENTER,
   NEXT_ON_ENTER,
@@ -805,7 +806,8 @@ export class ScreenplayEditor {
     const json = dt.getData(CLIP_MIME);
     if (json) {
       try {
-        const blocks = JSON.parse(json) as Block[];
+        // Clipboard data can come from any page: validate it like an imported .terra file.
+        const blocks = parseTerra(JSON.stringify({ blocks: JSON.parse(json) })).blocks;
         if (Array.isArray(blocks) && blocks.length) return this.insertBlocks(blocks);
       } catch {
         /* fall through */

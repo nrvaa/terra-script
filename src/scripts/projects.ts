@@ -30,6 +30,10 @@ export interface ProjectMeta {
   scenes: number;
   words: number;
   characters: number;
+  /** Last time a .terra copy was downloaded (or the project came from one). */
+  backedUpAt?: number;
+  /** false = the user turned backup reminders off for this project. */
+  remindBackup?: boolean;
 }
 
 const DB_NAME = 'tewrite';
@@ -143,6 +147,9 @@ export async function saveProject(id: string, doc: ScriptDoc, opts: { touch?: bo
     createdAt: existing?.createdAt ?? now,
     updatedAt: opts.touch === false && existing ? existing.updatedAt : now,
     ...computeStats(doc.blocks),
+    // Backup bookkeeping survives normal saves.
+    ...(existing?.backedUpAt ? { backedUpAt: existing.backedUpAt } : {}),
+    ...(existing?.remindBackup === false ? { remindBackup: false } : {}),
   };
   projects.put(meta);
   tx.objectStore('scripts').put({ id, doc });
@@ -269,7 +276,57 @@ export async function parseScriptFile(file: File): Promise<ScriptDoc> {
 }
 
 export async function importFile(file: File): Promise<string> {
-  return createProject(await parseScriptFile(file));
+  const id = await createProject(await parseScriptFile(file));
+  // Opening a .terra file means a backup already exists on disk.
+  if (/\.(terra|tewrite)$/i.test(file.name)) await markBackedUp(id);
+  return id;
+}
+
+/* ------------------------------------------------------------------ */
+/* Backups                                                             */
+/* ------------------------------------------------------------------ */
+
+const BACKUP_REMIND_AFTER = 3 * 24 * 60 * 60 * 1000; // 3 days
+
+async function updateMeta(id: string, patch: Partial<ProjectMeta>): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction('projects', 'readwrite');
+  const store = tx.objectStore('projects');
+  const meta = await request(store.get(id) as IDBRequest<ProjectMeta | undefined>);
+  if (!meta) return;
+  store.put({ ...meta, ...patch });
+  await done(tx);
+}
+
+/** Record that the user now has an up-to-date .terra copy of this project. */
+export const markBackedUp = (id: string) => updateMeta(id, { backedUpAt: Date.now() });
+
+export const setBackupReminder = (id: string, on: boolean) => updateMeta(id, { remindBackup: on });
+
+/** Has the project changed since its last backup (or never been backed up)? */
+export function needsBackup(meta: ProjectMeta): boolean {
+  return meta.words > 0 && meta.updatedAt > (meta.backedUpAt ?? 0);
+}
+
+/** Should we nag about a backup when this project is opened? */
+export function shouldRemindBackup(meta: ProjectMeta, now = Date.now()): boolean {
+  if (meta.remindBackup === false || !needsBackup(meta)) return false;
+  return now - (meta.backedUpAt ?? meta.createdAt) > BACKUP_REMIND_AFTER;
+}
+
+/**
+ * Ask the browser not to evict our data when it runs low on space
+ * (Safari otherwise may clear site data after ~7 days without a visit).
+ * It can't stop a user from clearing browsing data themselves.
+ */
+export async function requestPersistence(): Promise<boolean> {
+  try {
+    if (!navigator.storage?.persist) return false;
+    if (await navigator.storage.persisted()) return true;
+    return await navigator.storage.persist();
+  } catch {
+    return false;
+  }
 }
 
 /** Turn the single script saved by older versions into the first project. */
