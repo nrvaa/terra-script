@@ -24,6 +24,114 @@ export interface Block {
   color?: CardColor;
   /** Only on `scene`: production take log. */
   takes?: Take[];
+  /** Inline formatting runs: [start, end, flags] with flags from 'bius'. */
+  fmt?: Run[];
+  /** Manually marked as revised (Revisions → Mark change). */
+  mark?: boolean;
+  /** Only on `scene`: the scene was omitted; its original blocks are kept here. */
+  omit?: Block[];
+  /** Only on `scene`: locked scene number (Production → Scene numbers → Lock). */
+  num?: string;
+  /** Only on `scene`: always start this scene on a new page. */
+  newPage?: boolean;
+  /** Locked page that starts at wrapped line `pgLine` of this block. */
+  pg?: string;
+  pgLine?: number;
+}
+
+/** Inline style run: characters [start, end) get the flags b(old) i(talic) u(nderline) s(trike). */
+export type Run = [number, number, string];
+
+export interface ElementStyle {
+  caps: boolean;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  /** Blank lines before the element. */
+  before: number;
+}
+
+/** Built-in look of every element (what Customize → Format starts from). */
+export const DEFAULT_STYLES: Record<ElType, ElementStyle> = {
+  scene: { caps: true, bold: true, italic: false, underline: false, before: 2 },
+  action: { caps: false, bold: false, italic: false, underline: false, before: 1 },
+  character: { caps: true, bold: false, italic: false, underline: false, before: 1 },
+  parenthetical: { caps: false, bold: false, italic: false, underline: false, before: 0 },
+  dialogue: { caps: false, bold: false, italic: false, underline: false, before: 0 },
+  transition: { caps: true, bold: false, italic: false, underline: false, before: 1 },
+  shot: { caps: true, bold: false, italic: false, underline: false, before: 1 },
+  text: { caps: false, bold: false, italic: false, underline: false, before: 1 },
+  note: { caps: false, bold: false, italic: true, underline: false, before: 1 },
+  section: { caps: false, bold: true, italic: false, underline: false, before: 2 },
+  act: { caps: true, bold: true, italic: false, underline: true, before: 2 },
+  endact: { caps: true, bold: true, italic: false, underline: true, before: 2 },
+  lyrics: { caps: false, bold: false, italic: true, underline: false, before: 0 },
+};
+
+export function elementStyle(layout: ScriptLayout | undefined, type: ElType): ElementStyle {
+  return { ...DEFAULT_STYLES[type], ...(layout?.styles?.[type] ?? {}) };
+}
+
+/** Industry revision colours, in the order a production goes through them. */
+export const REV_COLORS = ['blue', 'pink', 'yellow', 'green', 'goldenrod', 'buff', 'salmon', 'cherry', 'white'] as const;
+export type RevColor = (typeof REV_COLORS)[number];
+export const REV_HEX: Record<RevColor, string> = {
+  blue: '#4c8dff',
+  pink: '#f472b6',
+  yellow: '#eab308',
+  green: '#22c55e',
+  goldenrod: '#d4a017',
+  buff: '#c8a27c',
+  salmon: '#fa8072',
+  cherry: '#de3163',
+  white: '#9ca3af',
+};
+
+export interface Revision {
+  color: RevColor;
+  /** Shown in the page header of revised pages. */
+  date: string;
+  /** Text of the script when tracking started; changes are measured against it. */
+  baseline?: { type: ElType; text: string }[];
+}
+
+export const TAG_CATS = [
+  'cast',
+  'extras',
+  'props',
+  'wardrobe',
+  'makeup',
+  'vehicles',
+  'animals',
+  'sfx',
+  'vfx',
+  'sound',
+  'music',
+  'stunts',
+  'setdressing',
+  'equipment',
+] as const;
+export type TagCat = (typeof TAG_CATS)[number];
+export const TAG_HEX: Record<TagCat, string> = {
+  cast: '#ef4444',
+  extras: '#f59e0b',
+  props: '#8b5cf6',
+  wardrobe: '#06b6d4',
+  makeup: '#ec4899',
+  vehicles: '#64748b',
+  animals: '#84cc16',
+  sfx: '#f97316',
+  vfx: '#3b82f6',
+  sound: '#14b8a6',
+  music: '#a855f7',
+  stunts: '#dc2626',
+  setdressing: '#a16207',
+  equipment: '#0ea5e9',
+};
+
+export interface Tag {
+  text: string;
+  cat: TagCat;
 }
 
 export type TakeStatus = 'good' | 'maybe' | 'skip';
@@ -58,7 +166,32 @@ export const CARD_COLORS: CardColor[] = ['red', 'orange', 'yellow', 'green', 'bl
 export interface ScriptLayout {
   paper: 'letter' | 'a4';
   sceneNumbers: boolean;
+  sceneNumberSide?: 'left' | 'right' | 'both';
+  sceneNumbersLocked?: boolean;
+  /** Letters for scenes added after locking: 'suffix' = 12A (default), 'prefix' = A13. */
+  sceneLetterStyle?: 'suffix' | 'prefix';
+  pagesLocked?: boolean;
+  /** Header / footer slots: [left, centre, right]. Tokens: {page} {title} {date} {rev}. */
+  header?: [string, string, string];
+  footer?: [string, string, string];
+  /** Show header/footer on page 1 too. */
+  firstPageHeader?: boolean;
+  /** Split dialogue across pages with (MORE) / (CONT'D). */
+  more?: boolean;
+  moreText?: string;
+  contdText?: string;
+  /** Add (CONT'D) when a character speaks again after an interruption in the same scene. */
+  autoContd?: boolean;
+  /** CONTINUED: / (CONTINUED) when a scene runs over a page break. */
+  sceneContinueds?: boolean;
+  watermark?: string;
+  /** Asterisks in the right margin and a revision label on revised pages. */
+  revMarks?: boolean;
+  styles?: Partial<Record<ElType, Partial<ElementStyle>>>;
 }
+
+export const DEFAULT_HEADER: [string, string, string] = ['', '', '{page}.'];
+export const DEFAULT_FOOTER: [string, string, string] = ['', '', ''];
 
 export interface TitlePage {
   title: string;
@@ -74,6 +207,102 @@ export interface ScriptDoc {
   titlePage: TitlePage;
   blocks: Block[];
   layout?: ScriptLayout;
+  revision?: Revision;
+  tags?: Tag[];
+}
+
+/** 0 → A, 25 → Z, 26 → AA. */
+const letters = (k: number): string => (k < 26 ? String.fromCharCode(65 + k) : letters(Math.floor(k / 26) - 1) + letters(k % 26));
+
+/**
+ * Scene number of every scene heading (block index → label).
+ * Locked: scenes keep their stored number; scenes added later get letters:
+ *  - suffix style: after 12 → 12A, 12B…
+ *  - prefix style: before 13 → A13, B13…
+ * Scenes added before the first scene are always A1, B1…
+ */
+export function sceneLabels(
+  blocks: Block[],
+  layout: Pick<ScriptLayout, 'sceneNumbersLocked' | 'sceneLetterStyle'> | boolean = false,
+): Map<number, string> {
+  const opts = typeof layout === 'boolean' ? { sceneNumbersLocked: layout } : layout;
+  const out = new Map<number, string>();
+  const scenes = blocks.map((b, i) => ({ b, i })).filter(({ b }) => b.type === 'scene');
+  if (!opts.sceneNumbersLocked || !scenes.some(({ b }) => b.num)) {
+    scenes.forEach(({ i }, k) => out.set(i, String(k + 1)));
+    return out;
+  }
+  const prefix = opts.sceneLetterStyle === 'prefix';
+  const taken = new Set(scenes.filter(({ b }) => b.num).map(({ b }) => b.num!));
+  const unique = (make: (k: number) => string) => {
+    for (let k = 0; ; k++) {
+      const label = make(k);
+      if (!taken.has(label)) {
+        taken.add(label);
+        return label;
+      }
+    }
+  };
+  let k = 0;
+  while (k < scenes.length) {
+    if (scenes[k].b.num) {
+      out.set(scenes[k].i, scenes[k].b.num!);
+      k++;
+      continue;
+    }
+    // A run of new scenes between two numbered ones.
+    let end = k;
+    while (end < scenes.length && !scenes[end].b.num) end++;
+    const prev = k > 0 ? scenes[k - 1].b.num! : null;
+    const next = end < scenes.length ? scenes[end].b.num! : null;
+    const usePrefix = next !== null && (prefix || prev === null);
+    let last = prev ?? '';
+    for (let j = k; j < end; j++) {
+      const label = usePrefix
+        ? unique((n) => letters(n) + next)
+        : unique((n) => {
+            let l = last;
+            for (let s = 0; s <= n; s++) l = nextLetter(l);
+            return l;
+          });
+      last = label;
+      out.set(scenes[j].i, label);
+    }
+    k = end;
+  }
+  return out;
+}
+
+/** 12 → 12A, 12A → 12B, 12Z → 12AA. */
+export function nextLetter(label: string): string {
+  const m = label.match(/^(.*?)([A-Z]*)$/)!;
+  const base = m[1];
+  const letters = m[2];
+  if (!letters) return `${base}A`;
+  const chars = letters.split('');
+  let k = chars.length - 1;
+  while (k >= 0 && chars[k] === 'Z') chars[k--] = 'A';
+  if (k < 0) chars.unshift('A');
+  else chars[k] = String.fromCharCode(chars[k].charCodeAt(0) + 1);
+  return base + chars.join('');
+}
+
+/**
+ * Character cues that get an automatic (CONT'D): the same character speaks
+ * again in the same scene with only action (no other speaker) in between.
+ */
+export function autoContdCues(blocks: Block[]): Set<number> {
+  const out = new Set<number>();
+  let last = '';
+  blocks.forEach((b, i) => {
+    if (b.type === 'scene' || b.type === 'act' || b.type === 'transition') last = '';
+    else if (b.type === 'character') {
+      const name = characterName(b.text);
+      if (name && name === last && !/CONT'?D/i.test(b.text) && !b.dual) out.add(i);
+      last = name;
+    }
+  });
+  return out;
 }
 
 export interface ElementDef {

@@ -1,6 +1,7 @@
 import { parseFountain, toFountain } from './fountain';
 import { t, type Key } from './i18n';
 import { parseTerra } from './projects';
+import { concatRuns, hasFlag, readRich, renderRich, shiftRuns, sliceRuns, toggleRange, type Flag } from './rich';
 import {
   EMPTY_ENTER,
   NEXT_ON_ENTER,
@@ -11,8 +12,12 @@ import {
   type Block,
   type CardColor,
   type ElType,
+  type Run,
   type Take,
 } from './types';
+
+/** Block properties stored as data attributes on the element. */
+type Props = Partial<Pick<Block, 'text' | 'synopsis' | 'color' | 'takes' | 'mark' | 'omit' | 'num' | 'newPage' | 'pg' | 'pgLine' | 'fmt'>>;
 
 interface Caret {
   b: number;
@@ -69,6 +74,15 @@ export interface EditorOptions {
   onCaretMove?: (type: ElType, blockIndex: number) => void;
 }
 
+export interface EditorPrefs {
+  /** Dropdowns for scene headings, characters and transitions. */
+  autocomplete: boolean;
+  /** INT. → Scene, ( → Parenthetical while typing. */
+  smartType: boolean;
+  /** Keep the line being typed in the middle of the screen. */
+  typewriter: boolean;
+}
+
 export class ScreenplayEditor {
   readonly root: HTMLElement;
   private opts: EditorOptions;
@@ -86,6 +100,7 @@ export class ScreenplayEditor {
   /** Line on which the user closed the dropdown with Esc (don't reopen it there). */
   private acDismissed: HTMLElement | null = null;
   private acLineType: string | undefined;
+  prefs: EditorPrefs = { autocomplete: true, smartType: true, typewriter: false };
 
   constructor(root: HTMLElement, opts: EditorOptions = {}) {
     this.root = root;
@@ -139,9 +154,25 @@ export class ScreenplayEditor {
 
   getBlocks(): Block[] {
     return this.els().map((el) => {
-      const b: Block = { type: (el.dataset.type as ElType) || 'action', text: this.textOf(el) };
+      const rich = readRich(el);
+      const b: Block = { type: (el.dataset.type as ElType) || 'action', text: rich.text };
+      if (rich.fmt) b.fmt = rich.fmt;
       if (el.dataset.dual) b.dual = true;
+      if (el.dataset.mark) b.mark = true;
+      if (el.dataset.pg) {
+        b.pg = el.dataset.pg;
+        b.pgLine = Number(el.dataset.pgLine) || 0;
+      }
       if (b.type === 'scene') {
+        if (el.dataset.lnum) b.num = el.dataset.lnum;
+        if (el.dataset.newPage) b.newPage = true;
+        if (el.dataset.omit) {
+          try {
+            b.omit = JSON.parse(el.dataset.omit) as Block[];
+          } catch {
+            /* ignore corrupt data */
+          }
+        }
         if (el.dataset.synopsis) b.synopsis = el.dataset.synopsis;
         if (el.dataset.color) b.color = el.dataset.color as CardColor;
         if (el.dataset.takes) {
@@ -192,25 +223,29 @@ export class ScreenplayEditor {
       const el = els[i];
       const from = el.dataset.type as ElType;
       if (from === type) continue;
-      let text = this.textOf(el);
+      const rich = readRich(el);
+      let text = rich.text;
+      let fmt = rich.fmt;
       if (type === 'parenthetical' && !text.trim().startsWith('(')) {
-        text = `(${text.trim()})`;
+        const lead = text.length - text.trimStart().length;
+        const inner = text.trim();
+        fmt = shiftRuns(sliceRuns(fmt, lead, lead + inner.length), 1, inner.length + 2);
+        text = `(${inner})`;
         if (i === caret.b) caret.o = Math.min(caret.o + 1, text.length - 1);
       } else if (from === 'parenthetical' && type !== 'parenthetical') {
-        const m = text.match(/^\s*\((.*)\)\s*$/);
+        const m = text.match(/^(\s*\()(.*)\)\s*$/);
         if (m) {
-          text = m[1];
+          fmt = sliceRuns(fmt, m[1].length, m[1].length + m[2].length);
+          text = m[2];
           if (i === caret.b) caret.o = Math.max(0, Math.min(caret.o - 1, text.length));
         }
       }
       el.dataset.type = type;
       if (type !== 'character') delete el.dataset.dual;
       if (type !== 'scene') {
-        delete el.dataset.synopsis;
-        delete el.dataset.color;
-        delete el.dataset.takes;
+        for (const k of ['synopsis', 'color', 'takes', 'omit', 'lnum', 'newPage']) delete el.dataset[k];
       }
-      this.setText(el, text);
+      this.setText(el, text, fmt);
     }
     this.setCaret(caret);
     this.commit();
@@ -283,24 +318,102 @@ export class ScreenplayEditor {
    * Update one block in place (card heading / synopsis / colour).
    * `typing: true` groups rapid edits into one undo step.
    */
-  updateBlock(index: number, patch: Partial<Pick<Block, 'text' | 'synopsis' | 'color' | 'takes'>>, typing = false) {
+  updateBlock(index: number, patch: Props, typing = false) {
     const el = this.els()[index];
     if (!el) return;
-    if (patch.text !== undefined) this.setText(el, patch.text.replace(/\n/g, ' '));
-    if ('synopsis' in patch) {
-      if (patch.synopsis) el.dataset.synopsis = patch.synopsis;
-      else delete el.dataset.synopsis;
-    }
-    if ('color' in patch) {
-      if (patch.color) el.dataset.color = patch.color;
-      else delete el.dataset.color;
-    }
-    if ('takes' in patch) {
-      if (patch.takes?.length) el.dataset.takes = JSON.stringify(patch.takes);
-      else delete el.dataset.takes;
-    }
+    this.applyProps(el, patch);
     if (typing) this.scheduleCommit();
     else this.commit();
+  }
+
+  /** Change several blocks as one undo step. */
+  updateBlocks(patches: Map<number, Props>) {
+    this.flush();
+    const els = this.els();
+    const caret = this.saveCaret();
+    for (const [i, p] of patches) if (els[i]) this.applyProps(els[i], p);
+    if (caret) this.restoreCaret(caret);
+    this.commit();
+  }
+
+  private applyProps(el: HTMLElement, patch: Props) {
+    if (patch.text !== undefined) this.setText(el, patch.text.replace(/\n/g, ' '), 'fmt' in patch ? patch.fmt : undefined);
+    else if ('fmt' in patch) this.setText(el, this.textOf(el), patch.fmt);
+    const set = (key: string, v: string | undefined) => {
+      if (v) el.dataset[key] = v;
+      else delete el.dataset[key];
+    };
+    if ('synopsis' in patch) set('synopsis', patch.synopsis);
+    if ('color' in patch) set('color', patch.color);
+    if ('takes' in patch) set('takes', patch.takes?.length ? JSON.stringify(patch.takes) : undefined);
+    if ('mark' in patch) set('mark', patch.mark ? '1' : undefined);
+    if ('omit' in patch) set('omit', patch.omit?.length ? JSON.stringify(patch.omit) : undefined);
+    if ('num' in patch) set('lnum', patch.num);
+    if ('newPage' in patch) set('newPage', patch.newPage ? '1' : undefined);
+    if ('pg' in patch) {
+      set('pg', patch.pg);
+      set('pgLine', patch.pg && patch.pgLine ? String(patch.pgLine) : undefined);
+    }
+  }
+
+  /** Selection as block/offset range (or the caret when collapsed). */
+  selection(): Sel | null {
+    return this.getSel();
+  }
+
+  /** Is the formatting `flag` on at the cursor / over the whole selection? */
+  formatActive(flag: Flag): boolean {
+    const sel = this.getSel();
+    if (!sel) return false;
+    if (sel.collapsed) {
+      const r = readRich(this.els()[sel.end.b]);
+      return hasFlag(r.text, r.fmt, sel.end.o, sel.end.o, flag);
+    }
+    return this.formatActiveRange(sel.start, sel.end, flag);
+  }
+
+  private formatActiveRange(start: Caret, end: Caret, flag: Flag): boolean {
+    const els = this.els();
+    let any = false;
+    for (let i = start.b; i <= end.b; i++) {
+      const r = readRich(els[i]);
+      const s = i === start.b ? start.o : 0;
+      const e = i === end.b ? end.o : r.text.length;
+      if (e <= s) continue;
+      any = true;
+      if (!hasFlag(r.text, r.fmt, s, e, flag)) return false;
+    }
+    return any;
+  }
+
+  /** Bold / italic / underline / strikethrough on the selection (or the word at the cursor). */
+  toggleFormat(flag: Flag) {
+    this.flush();
+    const sel = this.getSel();
+    if (!sel) return;
+    const els = this.els();
+    let { start, end } = sel;
+    if (sel.collapsed) {
+      // No selection: format the word under the cursor.
+      const text = this.textOf(els[start.b]);
+      let s = start.o;
+      let e = start.o;
+      while (s > 0 && /[\p{L}\p{N}'’]/u.test(text[s - 1])) s--;
+      while (e < text.length && /[\p{L}\p{N}'’]/u.test(text[e])) e++;
+      if (s === e) return;
+      start = { b: start.b, o: s };
+      end = { b: start.b, o: e };
+    }
+    const on = !this.formatActiveRange(start, end, flag);
+    for (let i = start.b; i <= end.b; i++) {
+      const r = readRich(els[i]);
+      const s = i === start.b ? start.o : 0;
+      const e = i === end.b ? end.o : r.text.length;
+      if (e > s) this.setText(els[i], r.text, toggleRange(r.text, r.fmt, s, e, flag, on));
+    }
+    this.restoreCaret(sel.collapsed ? sel.start : { ...start, end });
+    this.commit();
+    this.opts.onCaretMove?.(this.currentType(), this.currentIndex());
   }
 
   /** Commit pending typing into history now. */
@@ -325,18 +438,29 @@ export class ScreenplayEditor {
     d.className = 'el';
     d.dataset.type = b.type;
     if (b.dual && b.type === 'character') d.dataset.dual = '1';
+    if (b.mark) d.dataset.mark = '1';
+    if (b.pg) {
+      d.dataset.pg = b.pg;
+      if (b.pgLine) d.dataset.pgLine = String(b.pgLine);
+    }
     if (b.type === 'scene') {
       if (b.synopsis) d.dataset.synopsis = b.synopsis;
       if (b.color) d.dataset.color = b.color;
       if (b.takes?.length) d.dataset.takes = JSON.stringify(b.takes);
+      if (b.omit?.length) d.dataset.omit = JSON.stringify(b.omit);
+      if (b.num) d.dataset.lnum = b.num;
+      if (b.newPage) d.dataset.newPage = '1';
     }
-    this.setText(d, b.text);
+    this.setText(d, b.text, b.fmt);
     return d;
   }
 
-  private setText(el: HTMLElement, text: string) {
-    el.textContent = text;
-    if (!text) el.appendChild(document.createElement('br'));
+  private setText(el: HTMLElement, text: string, fmt?: Run[]) {
+    renderRich(el, text, fmt);
+  }
+
+  private rich(el: HTMLElement) {
+    return readRich(el);
   }
 
   private render(blocks: Block[]) {
@@ -434,9 +558,11 @@ export class ScreenplayEditor {
       // Strip any formatting markup a browser may have injected inside a block.
       for (const el of nodes as HTMLElement[]) {
         // Page-break spacers (.pg-break) are layout only and allowed inside blocks.
-        if (el.querySelector('*:not(br):not(.pg-break)')) {
+        // Our own <b>/<i>/<u>/<s> runs are fine; anything else is rebuilt from them.
+        if (el.querySelector('*:not(br):not(.pg-break):not(b):not(i):not(u):not(s), [style]:not(.pg-break)')) {
           const c = this.getCaret();
-          this.setText(el, this.textOf(el));
+          const r = this.rich(el);
+          this.setText(el, r.text, r.fmt);
           this.setCaret(c);
         }
       }
@@ -448,7 +574,8 @@ export class ScreenplayEditor {
     for (const n of nodes) {
       if (n instanceof HTMLElement && n.classList.contains('el') && n.dataset.type) {
         lastType = n.dataset.type as ElType;
-        blocks.push({ type: lastType, text: this.textOf(n), ...(n.dataset.dual ? { dual: true } : {}) });
+        const r = this.rich(n);
+        blocks.push({ type: lastType, text: r.text, ...(r.fmt ? { fmt: r.fmt } : {}), ...(n.dataset.dual ? { dual: true } : {}) });
       } else {
         const t = (n.textContent ?? '').replace(/ /g, ' ');
         if (t || n.nodeName === 'BR' || n.nodeName === 'DIV') blocks.push({ type: lastType, text: t.replace(/\n/g, ' ') });
@@ -508,10 +635,13 @@ export class ScreenplayEditor {
     const els = this.els();
     const first = els[sel.start.b];
     const last = els[sel.end.b];
-    const a = this.textOf(first).slice(0, sel.start.o);
-    const z = this.textOf(last).slice(sel.end.o);
+    const fr = this.rich(first);
+    const lr = this.rich(last);
+    const a = fr.text.slice(0, sel.start.o);
+    const z = lr.text.slice(sel.end.o);
+    const fmt = concatRuns(sliceRuns(fr.fmt, 0, sel.start.o), a.length, sliceRuns(lr.fmt, sel.end.o, lr.text.length));
     for (let i = sel.end.b; i > sel.start.b; i--) els[i].remove();
-    this.setText(first, a + z);
+    this.setText(first, a + z, fmt);
     this.setCaret(sel.start);
     return sel.start;
   }
@@ -541,9 +671,10 @@ export class ScreenplayEditor {
         if (type === 'parenthetical' && text.endsWith(')') && o === text.length - 1) o = text.length;
         const before = text.slice(0, o);
         const after = text.slice(o);
-        this.setText(el, before);
+        const fmt = this.rich(el).fmt;
+        this.setText(el, before, sliceRuns(fmt, 0, o));
         const nextType = NEXT_ON_ENTER[type];
-        const nb = this.makeEl({ type: after && type !== 'parenthetical' ? type : nextType, text: after });
+        const nb = this.makeEl({ type: after && type !== 'parenthetical' ? type : nextType, text: after, fmt: sliceRuns(fmt, o, text.length) });
         el.after(nb);
         this.setCaret({ b: caret.b + 1, o: 0 });
       }
@@ -603,7 +734,7 @@ export class ScreenplayEditor {
       prev.remove();
       this.setCaret({ b: i - 1, o: 0 });
     } else {
-      this.setText(prev, prevText + text);
+      this.setText(prev, prevText + text, concatRuns(this.rich(prev).fmt, prevText.length, this.rich(el).fmt));
       el.remove();
       this.setCaret({ b: i - 1, o: prevText.length });
     }
@@ -632,7 +763,7 @@ export class ScreenplayEditor {
       el.remove();
       this.setCaret({ b: sel.start.b, o: 0 });
     } else {
-      this.setText(el, text + this.textOf(next));
+      this.setText(el, text + this.textOf(next), concatRuns(this.rich(el).fmt, text.length, this.rich(next).fmt));
       next.remove();
       this.setCaret(sel.start);
     }
@@ -649,10 +780,14 @@ export class ScreenplayEditor {
     const text = this.textOf(el);
     const before = text.slice(0, caret.o);
     const after = text.slice(caret.o);
+    const fmt = this.rich(el).fmt;
+    const fmtBefore = sliceRuns(fmt, 0, caret.o);
+    const fmtAfter = sliceRuns(fmt, caret.o, text.length);
 
     if (incoming.length === 1) {
       const t = incoming[0].text;
-      this.setText(el, before + t + after);
+      const mid = concatRuns(fmtBefore, before.length, incoming[0].fmt);
+      this.setText(el, before + t + after, concatRuns(mid, before.length + t.length, fmtAfter));
       if (!text.trim() && incoming[0].type !== el.dataset.type) el.dataset.type = incoming[0].type;
       this.setCaret({ b: caret.b, o: before.length + t.length });
     } else {
@@ -661,13 +796,13 @@ export class ScreenplayEditor {
       const list = [...incoming];
       let anchor = el;
       if (before.trim()) {
-        this.setText(el, before);
+        this.setText(el, before, fmtBefore);
       } else {
         const first = list.shift()!;
         el.dataset.type = first.type;
         if (first.dual) el.dataset.dual = '1';
         else delete el.dataset.dual;
-        this.setText(el, first.text);
+        this.setText(el, first.text, first.fmt);
       }
       let lastIdx = caret.b;
       for (const b of list) {
@@ -677,7 +812,7 @@ export class ScreenplayEditor {
         lastIdx++;
       }
       const lastLen = this.textOf(anchor).length;
-      if (after.trim()) anchor.after(this.makeEl({ type, text: after }));
+      if (after.trim()) anchor.after(this.makeEl({ type, text: after, fmt: fmtAfter }));
       this.setCaret({ b: lastIdx, o: lastLen });
     }
     this.commit();
@@ -688,8 +823,15 @@ export class ScreenplayEditor {
     const blocks = this.getBlocks().slice(sel.start.b, sel.end.b + 1);
     if (!blocks.length) return [];
     const lastLen = sel.end.b - sel.start.b;
-    blocks[lastLen] = { ...blocks[lastLen], text: blocks[lastLen].text.slice(0, sel.end.o) };
-    blocks[0] = { ...blocks[0], text: blocks[0].text.slice(sel.start.o) };
+    const cut = (b: Block, s: number, e: number): Block => {
+      const out: Block = { ...b, text: b.text.slice(s, e) };
+      const fmt = sliceRuns(b.fmt, s, e);
+      if (fmt) out.fmt = fmt;
+      else delete out.fmt;
+      return out;
+    };
+    blocks[lastLen] = cut(blocks[lastLen], 0, sel.end.o);
+    blocks[0] = cut(blocks[0], sel.start.o, blocks[0].text.length);
     return blocks;
   }
 
@@ -728,8 +870,14 @@ export class ScreenplayEditor {
       this.redo();
       return;
     }
-    if (mod && ['b', 'i', 'u'].includes(e.key.toLowerCase())) {
+    if (mod && !e.altKey && !e.shiftKey && ['b', 'i', 'u'].includes(e.key.toLowerCase())) {
       e.preventDefault();
+      this.toggleFormat(e.key.toLowerCase() as Flag);
+      return;
+    }
+    if (mod && e.shiftKey && !e.altKey && e.key.toLowerCase() === 'x') {
+      e.preventDefault();
+      this.toggleFormat('s');
       return;
     }
 
@@ -786,7 +934,9 @@ export class ScreenplayEditor {
       const type = el.dataset.type as ElType;
       const text = this.textOf(el);
       // Smart conversions while typing.
-      if (type === 'action' && SCENE_PREFIX.test(text) && sel.end.o === text.length) {
+      if (!this.prefs.smartType) {
+        /* automatic conversions switched off */
+      } else if (type === 'action' && SCENE_PREFIX.test(text) && sel.end.o === text.length) {
         el.dataset.type = 'scene';
       } else if (type === 'dialogue' && text === '(') {
         el.dataset.type = 'parenthetical';
@@ -797,6 +947,18 @@ export class ScreenplayEditor {
     this.scheduleCommit();
     this.onSelectionChange(true);
     this.updateAutocomplete();
+    if (this.prefs.typewriter) this.centerCaret();
+  }
+
+  /** Typewriter scrolling: keep the current line in the middle of the screen. */
+  centerCaret() {
+    const el = this.currentEl;
+    const scroller = this.root.closest('main');
+    if (!el || !scroller) return;
+    const r = el.getBoundingClientRect();
+    const box = scroller.getBoundingClientRect();
+    const delta = r.top + r.height / 2 - (box.top + box.height / 2);
+    if (Math.abs(delta) > 4) scroller.scrollTop += delta;
   }
 
   private onPaste(e: ClipboardEvent) {
@@ -981,6 +1143,7 @@ export class ScreenplayEditor {
   }
 
   private updateAutocomplete(auto = false) {
+    if (!this.prefs.autocomplete) return this.hideAutocomplete();
     const sel = this.getSel();
     if (!sel || !sel.collapsed) return this.hideAutocomplete();
     const el = this.els()[sel.end.b];

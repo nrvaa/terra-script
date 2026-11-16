@@ -1,10 +1,13 @@
-import type { Block, TitlePage } from './types';
+import { expand } from './rich';
+import type { Block, Run, TitlePage } from './types';
 
 const esc = (s: string) =>
   s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!);
 
 interface PrintOptions {
   sceneNumbers: boolean;
+  /** Scene number of each scene heading (block index → label). */
+  labels?: Map<number, string>;
 }
 
 /** Build print-ready HTML (title page + script) from the document model. */
@@ -29,7 +32,7 @@ export function buildPrintHtml(blocks: Block[], tp: TitlePage, opts: PrintOption
   const body: string[] = [];
   let scene = 0;
   let lastDialogueStart = -1; // index in body[] of the previous dialogue group
-  const printable = blocks.filter((b) => b.type !== 'note' && b.type !== 'section');
+  const printable = blocks.map((b, i) => ({ ...b, idx: i })).filter((b) => b.type !== 'note' && b.type !== 'section');
 
   for (let i = 0; i < printable.length; i++) {
     const b = printable[i];
@@ -51,8 +54,9 @@ export function buildPrintHtml(blocks: Block[], tp: TitlePage, opts: PrintOption
     lastDialogueStart = -1;
     if (b.type === 'scene') {
       scene++;
-      const n = opts.sceneNumbers ? `<span class="p-sn p-sn-l">${scene}</span><span class="p-sn p-sn-r">${scene}</span>` : '';
-      body.push(`<div class="p-el p-scene">${n}${esc(b.text.toUpperCase())}</div>`);
+      const label = esc(opts.labels?.get(b.idx) ?? String(scene));
+      const n = opts.sceneNumbers ? `<span class="p-sn p-sn-l">${label}</span><span class="p-sn p-sn-r">${label}</span>` : '';
+      body.push(`<div class="p-el p-scene">${n}${rich(b.text.toUpperCase(), b.fmt)}</div>`);
       continue;
     }
     body.push(renderLine(b));
@@ -66,5 +70,23 @@ function renderLine(b: Block): string {
   let t = b.text;
   if (['character', 'transition', 'shot', 'act', 'endact'].includes(b.type)) t = t.toUpperCase();
   if (b.type === 'parenthetical' && t.trim() && !t.trim().startsWith('(')) t = `(${t.trim()})`;
-  return `<div class="p-el p-${b.type}">${esc(t) || '&nbsp;'}</div>`;
+  const fmt = t.length === b.text.length ? b.fmt : undefined;
+  return `<div class="p-el p-${b.type}">${rich(t, fmt) || '&nbsp;'}</div>`;
+}
+
+/** Text with its bold / italic / underline / strikethrough runs as HTML. */
+function rich(text: string, fmt?: Run[]): string {
+  if (!fmt?.length) return esc(text);
+  const flags = expand(text.length, fmt);
+  let out = '';
+  let k = 0;
+  while (k < text.length) {
+    let e = k + 1;
+    while (e < text.length && flags[e] === flags[k]) e++;
+    let seg = esc(text.slice(k, e));
+    for (const f of flags[k]) seg = `<${f}>${seg}</${f}>`;
+    out += seg;
+    k = e;
+  }
+  return out;
 }

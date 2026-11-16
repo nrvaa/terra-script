@@ -51,7 +51,13 @@ export interface CardsBoard {
 export function createCardsBoard(
   root: HTMLElement,
   editor: ScreenplayEditor,
-  opts: { onOpenScene: (blockIndex: number) => void; onTakes: (blockIndex: number) => void; sceneNumbers: () => boolean },
+  opts: {
+    onOpenScene: (blockIndex: number) => void;
+    onTakes: (blockIndex: number) => void;
+    sceneNumbers: () => boolean;
+    /** Scene number labels (locked numbers / A-numbers), by block index. */
+    sceneLabels?: (blocks: Block[]) => Map<number, string>;
+  },
 ): CardsBoard {
   let units: Unit[] = [];
   let dragFrom: number | null = null;
@@ -74,7 +80,8 @@ export function createCardsBoard(
     const blocks = editor.getBlocks();
     units = toUnits(blocks);
     const parts: string[] = [];
-    let sceneNo = 0;
+    let sceneNo: number | string = 0;
+    const labels = opts.sceneLabels?.(blocks);
     let scenes = 0;
 
     units.forEach((u, ui) => {
@@ -86,7 +93,7 @@ export function createCardsBoard(
           <span class="grip" aria-hidden="true">${ICON_GRIP}</span><span class="board-divider-label">${esc(label)}</span></div>`);
         return;
       }
-      sceneNo++;
+      sceneNo = labels?.get(u.start) ?? scenes + 1;
       scenes++;
       const speakers = [...new Set(blocks.slice(u.start, u.end).filter((x) => x.type === 'character').map((x) => characterName(x.text)).filter(Boolean))];
       const shown = speakers.slice(0, 3).join(', ');

@@ -1,6 +1,8 @@
 import { ScreenplayEditor, setSuggestionLang } from './editor';
+import { initFeatures, type AppCtx } from './features';
 import { normalizeTitlePage, toFountain, toPlainText } from './fountain';
-import { buildPdf, pageStarts, type PageStart } from './pdf';
+import { buildPdf, pageDecor, pageStarts, type LaidPage, type PageStart } from './pdf';
+import { toMarkup } from './rich';
 import { applyPageView } from './page-view';
 import { hideLoader, initThemeSwitches, syncThemeSwitches, themeTransition } from './ui-effects';
 import { buildReport, characterStats, reportToText } from './report';
@@ -35,9 +37,13 @@ import {
   emptyTitlePage,
   type Block,
   type ElType,
+  type Revision,
   type ScriptDoc,
+  type ScriptLayout,
+  type Tag,
   type TitlePage,
   type Take,
+  sceneLabels,
   sceneTakeStatus,
 } from './types';
 
@@ -54,8 +60,8 @@ interface Settings {
   theme: 'light' | 'dark' | 'system';
   paper: 'letter' | 'a4';
   zoom: number;
-  sidebarTab: 'scenes' | 'characters' | 'stats';
-  showTitlePage: boolean;
+  sidebarTab: 'scenes' | 'characters' | 'stats' | 'tags';
+  titleSheet: boolean;
   includeTitlePage: boolean;
   paperColor: 'auto' | 'light' | 'dark';
   lang: Lang;
@@ -65,10 +71,33 @@ interface Settings {
   exportChars: boolean;
   view: 'script' | 'cards';
   exportTakes: boolean;
+  // Customize
+  autocomplete: boolean;
+  smartType: boolean;
+  typewriter: boolean;
+  spellcheck: boolean;
+  showRevisions: boolean;
+  showTags: boolean;
+  showNotes: boolean;
+  backupReminders: boolean;
+  autoSnapshots: boolean;
+  docLang: string;
+  writer: string;
 }
 
 const defaultSettings: Settings = {
-  showTitlePage: true,
+  autocomplete: true,
+  smartType: true,
+  typewriter: false,
+  spellcheck: false,
+  showRevisions: true,
+  showTags: true,
+  showNotes: true,
+  backupReminders: true,
+  autoSnapshots: true,
+  docLang: 'en-US',
+  writer: '',
+  titleSheet: false,
   includeTitlePage: true,
   exportFormat: 'pdf',
   exportScript: true,
@@ -106,6 +135,11 @@ const save = (key: string, value: unknown) => {
 
 const settings: Settings = { ...defaultSettings, ...(load<Partial<Settings>>(SETTINGS_KEY) ?? {}) };
 let titlePage: TitlePage = emptyTitlePage();
+/** Script-level layout beyond paper size / scene numbers (headers, locks, formats…). */
+let layoutX: Omit<ScriptLayout, 'paper' | 'sceneNumbers'> = {};
+let revision: Revision | undefined;
+let tags: Tag[] = [];
+let lastLaid: LaidPage[] = [];
 
 setLang(settings.lang);
 setSuggestionLang(getLang());
@@ -160,17 +194,92 @@ const editor = new ScreenplayEditor(editorEl, {
     highlightScene(index);
     takesPanel.follow(sceneAt(index));
     updateTakeStatus(index);
+    features.updateFormatButtons();
   },
 });
+
+function currentLayout(): ScriptLayout {
+  return { ...layoutX, paper: settings.paper, sceneNumbers: settings.sceneNumbers };
+}
 
 function currentDoc(): ScriptDoc {
   return {
     version: 2,
     titlePage: { ...titlePage },
     blocks: editor.getBlocks(),
-    layout: { paper: settings.paper, sceneNumbers: settings.sceneNumbers },
+    layout: currentLayout(),
+    ...(revision ? { revision } : {}),
+    ...(tags.length ? { tags } : {}),
   };
 }
+
+/** Script data that isn't part of the editor's undo history changed: save it. */
+function docMetaChanged() {
+  changeVersion++;
+  saveStatus.textContent = t('save.saving');
+  window.clearTimeout(changeTimer);
+  changeTimer = window.setTimeout(persist, 300);
+}
+
+const ctx: AppCtx = {
+  editor,
+  editorEl,
+  paper,
+  settings,
+  projectId,
+  applySettings: () => applySettings(),
+  layout: currentLayout,
+  setLayout(patch) {
+    const { paper: p, sceneNumbers: sn, ...rest } = patch;
+    if (p) settings.paper = p;
+    if (sn !== undefined) settings.sceneNumbers = sn;
+    const next = { ...layoutX } as Record<string, unknown>;
+    for (const [k, v] of Object.entries(rest)) {
+      if (v === undefined) delete next[k];
+      else next[k] = v;
+    }
+    layoutX = next as typeof layoutX;
+    layoutChanged();
+    if (settings.view === 'cards') board.render();
+  },
+  revision: () => revision,
+  setRevision(r) {
+    revision = r;
+    features.resetRevisionCache();
+    docMetaChanged();
+    layoutPages();
+  },
+  tags: () => tags,
+  setTags(next) {
+    tags = next;
+    docMetaChanged();
+  },
+  titlePage: () => titlePage,
+  setTitlePage(tp) {
+    titlePage = normalizeTitlePage(tp);
+    syncTitleUI();
+    titleChanged();
+  },
+  currentDoc,
+  lastLayout: () => lastLaid,
+  saveNow: () => saveNow(),
+  toast: (m) => toast(m),
+  download: (n, c, type) => download(n, c, type),
+  fileBase: () => fileBase(),
+  sceneAt: (i) => sceneAt(i),
+  setSidebarTab: (tab) => setSidebarTab(tab as Settings['sidebarTab']),
+  showSidebar() {
+    if (!settings.sidebar) {
+      settings.sidebar = true;
+      applySettings();
+      applyZoom();
+    }
+  },
+  applyLanguage: (l) => applyLanguage(l),
+  relTime: (ts) => relTime(ts),
+  locale: () => locale(),
+};
+const features = initFeatures(ctx);
 
 /** Paper size / scene numbers belong to the script: save them with it. */
 function layoutChanged() {
@@ -204,6 +313,7 @@ function persist(): Promise<unknown> {
         lastSavedAt = new Date();
         if (savedVersion === changeVersion) clearUnsaved(projectId);
         renderSaveStatus();
+        features.maybeAutoSnapshot();
       },
       (err) => {
         console.error(err);
@@ -230,12 +340,17 @@ function afterChange() {
   updateTakeStatus(editor.currentIndex());
 }
 
-function openDoc(doc: { titlePage?: Partial<TitlePage>; blocks: Block[]; layout?: ScriptDoc['layout'] }) {
+function openDoc(doc: { titlePage?: Partial<TitlePage>; blocks: Block[]; layout?: ScriptDoc['layout']; revision?: Revision; tags?: Tag[] }) {
+  revision = doc.revision;
+  tags = doc.tags ?? [];
+  features.resetRevisionCache();
   if (doc.layout) {
-    settings.paper = doc.layout.paper;
-    settings.sceneNumbers = doc.layout.sceneNumbers;
+    const { paper: p, sceneNumbers: sn, ...rest } = doc.layout;
+    settings.paper = p;
+    settings.sceneNumbers = sn;
+    layoutX = rest;
     applySettings();
-  }
+  } else layoutX = {};
   loading = true;
   titlePage = normalizeTitlePage(doc.titlePage);
   syncTitleUI();
@@ -271,7 +386,22 @@ function updateToolbar(type: ElType) {
   }
   const select = $<HTMLSelectElement>('#type-select');
   if (select) select.value = type;
+  moveGlider();
 }
+
+/** Slide the toolbar's glider under the active element button. */
+function moveGlider() {
+  const bar = $('.toolbar-inner');
+  const active = bar.querySelector<HTMLElement>('.tool.active');
+  if (!active || !active.offsetWidth) {
+    bar.style.setProperty('--go', '0');
+    return;
+  }
+  bar.style.setProperty('--gx', `${active.offsetLeft}px`);
+  bar.style.setProperty('--gw', `${active.offsetWidth}px`);
+  bar.style.setProperty('--go', '1');
+}
+window.addEventListener('resize', moveGlider);
 
 function updateStatus(type: ElType) {
   $('#st-type').textContent = LABELS[type];
@@ -306,6 +436,7 @@ $('#btn-dual').addEventListener('click', dual);
 const boardEl = $('#board');
 const board = createCardsBoard(boardEl, editor, {
   sceneNumbers: () => settings.sceneNumbers,
+  sceneLabels: (blocks) => sceneLabels(blocks, layoutX),
   onTakes: (blockIndex) => takesPanel.open(blockIndex),
   onOpenScene: (blockIndex) => {
     setView('script');
@@ -398,7 +529,7 @@ for (const r of document.querySelectorAll<HTMLInputElement>('input[name=view]'))
 }
 
 $('#btn-title').addEventListener('mousedown', (e) => e.preventDefault());
-$('#btn-title').addEventListener('click', openTitlePage);
+$('#btn-title').addEventListener('click', () => toggleTitlePage());
 
 /* -------------------------------------------------------------------- */
 /* Sidebar                                                               */
@@ -430,9 +561,11 @@ function renderSidebar() {
   sceneIndices = [];
   const items: string[] = [];
   let n = 0;
+  const labels = sceneLabels(blocks, layoutX);
   blocks.forEach((b, i) => {
     if (b.type === 'scene') {
       n++;
+      const num = esc(labels.get(i) ?? String(n));
       sceneIndices.push(i);
       // The card synopsis, else the first line of action, works as a summary.
       let synopsis = b.synopsis?.trim() ?? '';
@@ -444,7 +577,7 @@ function renderSidebar() {
         }
       }
       items.push(`<li><button class="nav-scene" data-block="${i}">
-        <span class="nav-num">${n}${b.color ? `<i class="nav-dot" data-color="${esc(b.color)}"></i>` : ''}</span>${takeDot(b.takes)}
+        <span class="nav-num">${num}${b.color ? `<i class="nav-dot" data-color="${esc(b.color)}"></i>` : ''}</span>${takeDot(b.takes)}
         <span class="min-w-0"><span class="nav-head">${esc(b.text.toUpperCase()) || `<em>${t('nav.untitledScene')}</em>`}</span>
         ${synopsis ? `<span class="nav-syn">${esc(synopsis)}</span>` : ''}</span></button></li>`);
     } else if (b.type === 'section' || b.type === 'act') {
@@ -490,6 +623,7 @@ function renderSidebar() {
     .map(([k, v, id]) => `<div class="stat"><dt>${k}</dt><dd${id ? ` id="${id}"` : ''}>${v}</dd></div>`)
     .join('');
   $('#st-words').textContent = t('st.words', { n: words.toLocaleString(locale()) });
+  if (settings.sidebarTab === 'tags' && settings.sidebar) features.renderTags();
 
   highlightScene(editor.currentIndex());
 }
@@ -522,6 +656,7 @@ function setSidebarTab(tab: Settings['sidebarTab']) {
     b.setAttribute('aria-selected', String(on));
   }
   for (const p of $$('[data-panel]')) p.hidden = p.dataset.panel !== tab;
+  if (tab === 'tags') features.renderTags();
   save(SETTINGS_KEY, settings);
 }
 for (const b of $$('[data-tab]')) b.addEventListener('click', () => setSidebarTab(b.dataset.tab as Settings['sidebarTab']));
@@ -538,10 +673,13 @@ let pageCount = 1;
  */
 function layoutPages() {
   let starts: PageStart[] = [];
+  const blocks = editor.getBlocks();
+  const opts = features.layoutOptions(blocks);
   try {
-    const result = pageStarts(editor.getBlocks(), { paper: settings.paper, sceneNumbers: settings.sceneNumbers });
+    const result = pageStarts(blocks, opts);
     pageCount = result.pages;
     starts = result.starts;
+    lastLaid = result.laid;
   } catch (err) {
     console.error(err);
   }
@@ -552,12 +690,19 @@ function layoutPages() {
     paper,
     editor: editorEl,
     layer: markersEl,
-    blocks: editor.getBlocks(),
+    blocks,
     starts,
     size: settings.paper,
     enabled: settings.pageMarkers,
+    laid: lastLaid,
+    decor: lastLaid.map((p, i) => pageDecor(opts, p, i)),
+    watermark: opts.watermark,
+    moreText: opts.moreText,
+    contdText: opts.contdText,
   });
-  if (caret) editor.restoreCaret(caret);  $('#st-pages').textContent = t(pageCount === 1 ? 'st.page' : 'st.pages', { n: pageCount });
+  if (caret) editor.restoreCaret(caret);
+  features.refreshScreen();
+  $('#st-pages').textContent = t(pageCount === 1 ? 'st.page' : 'st.pages', { n: pageCount });
   const statPages = document.getElementById('stat-pages');
   const statRuntime = document.getElementById('stat-runtime');
   if (statPages) statPages.textContent = String(pageCount);
@@ -592,19 +737,34 @@ function applySettings() {
   applyZoom();
   $('#sidebar').hidden = !settings.sidebar;
   $('#btn-show-sidebar').hidden = settings.sidebar;
-  $('#title-sheet').hidden = !settings.showTitlePage;
-  $('#btn-title').setAttribute('aria-pressed', String(settings.showTitlePage));
+  $('#title-sheet').hidden = !settings.titleSheet;
+  $('#btn-title').setAttribute('aria-pressed', String(settings.titleSheet));
   $('#st-zoom').textContent = `${Math.round(settings.zoom * 100)}%`;
 
-  for (const item of $$('[data-check]')) {
-    const key = item.dataset.check!;
-    const [k, v] = key.split('=');
-    const val = (settings as unknown as Record<string, unknown>)[k];
-    const on = v === undefined ? Boolean(val) : String(val) === v;
-    item.setAttribute('aria-checked', String(on));
-  }
+  // Customize → Editing / Display
+  editor.prefs = { autocomplete: settings.autocomplete, smartType: settings.smartType, typewriter: settings.typewriter };
+  editorEl.spellcheck = settings.spellcheck;
+  editorEl.lang = settings.docLang;
+  editorEl.classList.toggle('hide-notes', !settings.showNotes);
+  editorEl.classList.toggle('show-revisions', settings.showRevisions);
+
+  refreshChecks();
   save(SETTINGS_KEY, settings);
   layoutPages();
+}
+
+/** Tick marks in the menus (settings, plus states that depend on the cursor). */
+function refreshChecks() {
+  for (const item of $$('[data-check]')) {
+    const key = item.dataset.check!;
+    let on = features.check(key);
+    if (on === undefined) {
+      const [k, v] = key.split('=');
+      const val = (settings as unknown as Record<string, unknown>)[k];
+      on = v === undefined ? Boolean(val) : String(val) === v;
+    }
+    item.setAttribute('aria-checked', String(on));
+  }
 }
 media.addEventListener('change', applySettings);
 
@@ -733,7 +893,7 @@ function showStorageNotices(meta: ProjectMeta) {
     d.showModal();
     return;
   }
-  if (!projectId || !shouldRemindBackup(meta)) return;
+  if (!projectId || !settings.backupReminders || !shouldRemindBackup(meta)) return;
   if (Number(lsGet(SNOOZE_PREFIX + projectId) ?? 0) > Date.now()) return;
 
   const d = $<HTMLDialogElement>('#dlg-backup');
@@ -975,12 +1135,14 @@ function runExport(c: ExportChoice) {
       downloadTerra();
       return;
     } else if (c.format === 'pdf') {
-      const blob = buildPdf(blocks, { paper: settings.paper, sceneNumbers: settings.sceneNumbers, titlePage: tp, script: c.script, report });
+      const blob = buildPdf(blocks, { ...features.layoutOptions(blocks), titlePage: tp, script: c.script, report });
       downloadBlob(file, blob);
     } else {
       const parts: string[] = [];
       if (c.format === 'fountain') {
-        parts.push(toFountain(c.script ? blocks : [], tp).trimEnd());
+        // Fountain keeps bold / italic / underline as **, * and _ markers.
+        const marked = blocks.map((b) => (b.fmt ? { ...b, text: toMarkup(b.text, b.fmt) } : b));
+        parts.push(toFountain(c.script ? marked : [], tp).trimEnd());
         // Boneyard /* */ keeps the report out of the screenplay when re-opened.
         if (report) parts.push(`/*\n${reportToText(report).replace(/\*\//g, '* /')}\n*/`);
       } else {
@@ -1010,7 +1172,11 @@ function downloadBlob(name: string, blob: Blob) {
 function printScript() {
   editor.flush();
   const root = $('#print-root');
-  root.innerHTML = buildPrintHtml(editor.getBlocks(), exportTitle() ?? emptyTitlePage(), { sceneNumbers: settings.sceneNumbers });
+  const blocks = editor.getBlocks();
+  root.innerHTML = buildPrintHtml(blocks, exportTitle() ?? emptyTitlePage(), {
+    sceneNumbers: settings.sceneNumbers,
+    labels: sceneLabels(blocks, layoutX),
+  });
   $('#page-style').textContent = `@page { size: ${settings.paper === 'a4' ? 'A4' : 'letter'}; }`;
   window.print();
 }
@@ -1056,8 +1222,8 @@ for (const f of tpFields) {
 }
 
 function openTitlePage() {
-  if (!settings.showTitlePage) {
-    settings.showTitlePage = true;
+  if (!settings.titleSheet) {
+    settings.titleSheet = true;
     applySettings();
   }
   titleSheet.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -1065,6 +1231,21 @@ function openTitlePage() {
   title.focus({ preventScroll: true });
   title.setSelectionRange(title.value.length, title.value.length);
 }
+
+/** Hide the title page sheet (it stays in exports) and go back to the script. */
+function hideTitlePage() {
+  settings.titleSheet = false;
+  applySettings();
+  $('main.desk').scrollTop = 0;
+  editor.focus(0, 0);
+}
+
+/** The toolbar's Title Page button: open the sheet, or hide it when it's open. */
+function toggleTitlePage() {
+  if (settings.titleSheet) hideTitlePage();
+  else openTitlePage();
+}
+$('#btn-hide-title').addEventListener('click', hideTitlePage);
 
 /** Title page to include in exports, or undefined when switched off/empty. */
 function exportTitle(): TitlePage | undefined {
@@ -1113,10 +1294,7 @@ const actions: Record<string, () => void> = {
   print: printScript,
   projects: goToProjects,
   'title-page': openTitlePage,
-  'toggle-title-sheet': () => {
-    settings.showTitlePage = !settings.showTitlePage;
-    applySettings();
-  },
+  'toggle-title-sheet': toggleTitlePage,
   undo: () => editor.undo(),
   redo: () => editor.redo(),
   'select-all': () => {
@@ -1168,6 +1346,7 @@ const actions: Record<string, () => void> = {
   'load-sample': () => {
     if (confirm(t('confirm.sample'))) openSample();
   },
+  ...features.actions,
 };
 for (const el of ELEMENTS) actions[`type-${el.type}`] = () => editor.setType(el.type);
 
@@ -1188,6 +1367,7 @@ function showMenu(menu: HTMLElement) {
   if (openMenu === menu) return;
   closeMenus();
   editor.closeSuggestions();
+  refreshChecks();
   openMenu = menu;
   menu.classList.add('open');
   menu.querySelector('[data-menu-btn]')?.setAttribute('aria-expanded', 'true');
@@ -1226,6 +1406,11 @@ document.addEventListener('keydown', (e) => {
   if (e.altKey && !mod && e.code === 'KeyT') {
     e.preventDefault();
     toggleTakes();
+    return;
+  }
+  if (e.altKey && !mod && e.code === 'KeyR') {
+    e.preventDefault();
+    features.readAloud();
     return;
   }
   if (e.altKey && !mod && !inField) {

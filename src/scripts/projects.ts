@@ -8,8 +8,15 @@ import { layoutScript } from './pdf';
 import {
   CARD_COLORS,
   ELEMENTS,
+  REV_COLORS,
+  TAG_CATS,
   TAKE_STATUSES,
   characterName,
+  type ElementStyle,
+  type RevColor,
+  type Revision,
+  type Run,
+  type TagCat,
   type Take,
   type TakeStatus,
   type Block,
@@ -37,7 +44,7 @@ export interface ProjectMeta {
 }
 
 const DB_NAME = 'tewrite';
-const DB_VERSION = 1;
+const DB_VERSION = 2; // 2: snapshots store
 const LEGACY_KEY = 'tewrite:doc';
 const UNSAVED_PREFIX = 'tewrite:unsaved:';
 
@@ -52,8 +59,18 @@ function openDb(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
       if (!db.objectStoreNames.contains('scripts')) db.createObjectStore('scripts', { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('snapshots')) {
+        db.createObjectStore('snapshots', { keyPath: 'id' }).createIndex('project', 'projectId');
+      }
     };
-    req.onsuccess = () => resolve(req.result);
+    req.onsuccess = () => {
+      // Let a newer version of the app (in another tab) upgrade the database.
+      req.result.onversionchange = () => {
+        req.result.close();
+        dbPromise = null;
+      };
+      resolve(req.result);
+    };
     req.onerror = () => reject(req.error);
     req.onblocked = () => reject(new Error('IndexedDB blocked'));
   });
@@ -165,9 +182,12 @@ export async function createProject(doc: ScriptDoc): Promise<string> {
 
 export async function deleteProject(id: string): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction(['projects', 'scripts'], 'readwrite');
+  const tx = db.transaction(['projects', 'scripts', 'snapshots'], 'readwrite');
   tx.objectStore('projects').delete(id);
   tx.objectStore('scripts').delete(id);
+  const snaps = tx.objectStore('snapshots');
+  const keys = await request(snaps.index('project').getAllKeys(id));
+  for (const k of keys) snaps.delete(k);
   await done(tx);
   try {
     localStorage.removeItem(UNSAVED_PREFIX + id);
@@ -192,6 +212,73 @@ export async function duplicateProject(id: string, makeTitle: (t: string) => str
 }
 
 /* ------------------------------------------------------------------ */
+/* Snapshots (document history)                                        */
+/* ------------------------------------------------------------------ */
+
+export interface Snapshot {
+  id: string;
+  projectId: string;
+  at: number;
+  /** User label; empty for automatic snapshots. */
+  label: string;
+  auto: boolean;
+  writer: string;
+  words: number;
+  pages: number;
+  doc: ScriptDoc;
+}
+
+const MAX_AUTO_SNAPSHOTS = 40;
+
+export async function listSnapshots(projectId: string): Promise<Snapshot[]> {
+  const db = await openDb();
+  const tx = db.transaction('snapshots', 'readonly');
+  const all = await request(tx.objectStore('snapshots').index('project').getAll(projectId) as IDBRequest<Snapshot[]>);
+  return all.sort((a, b) => b.at - a.at);
+}
+
+export async function saveSnapshot(projectId: string, doc: ScriptDoc, opts: { label?: string; auto?: boolean; writer?: string } = {}): Promise<Snapshot> {
+  const stats = computeStats(doc.blocks);
+  const snap: Snapshot = {
+    id: newId(),
+    projectId,
+    at: Date.now(),
+    label: (opts.label ?? '').trim().slice(0, 120),
+    auto: Boolean(opts.auto),
+    writer: (opts.writer ?? '').trim().slice(0, 80),
+    words: stats.words,
+    pages: stats.pages,
+    doc: structuredClone(doc),
+  };
+  const db = await openDb();
+  const tx = db.transaction('snapshots', 'readwrite');
+  const store = tx.objectStore('snapshots');
+  store.put(snap);
+  // Keep the newest automatic snapshots only; named ones stay until deleted.
+  const all = await request(store.index('project').getAll(projectId) as IDBRequest<Snapshot[]>);
+  const autos = all.filter((s) => s.auto && s.id !== snap.id).sort((a, b) => b.at - a.at);
+  for (const old of autos.slice(MAX_AUTO_SNAPSHOTS - 1)) store.delete(old.id);
+  await done(tx);
+  return snap;
+}
+
+export async function deleteSnapshot(id: string): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction('snapshots', 'readwrite');
+  tx.objectStore('snapshots').delete(id);
+  await done(tx);
+}
+
+export async function renameSnapshot(id: string, label: string): Promise<void> {
+  const db = await openDb();
+  const tx = db.transaction('snapshots', 'readwrite');
+  const store = tx.objectStore('snapshots');
+  const s = await request(store.get(id) as IDBRequest<Snapshot | undefined>);
+  if (s) store.put({ ...s, label: label.trim().slice(0, 120), auto: false });
+  await done(tx);
+}
+
+/* ------------------------------------------------------------------ */
 /* Import / legacy                                                     */
 /* ------------------------------------------------------------------ */
 
@@ -211,6 +298,8 @@ export function serializeTerra(doc: ScriptDoc): string {
       exportedAt: new Date().toISOString(),
       titlePage: doc.titlePage,
       layout: doc.layout,
+      ...(doc.revision ? { revision: doc.revision } : {}),
+      ...(doc.tags?.length ? { tags: doc.tags } : {}),
       blocks: doc.blocks,
     },
     null,
@@ -225,19 +314,102 @@ export function parseTerra(text: string): ScriptDoc {
   const raw = JSON.parse(text) as Record<string, unknown>;
   if (!raw || typeof raw !== 'object' || !Array.isArray(raw.blocks)) throw new Error('format');
   if (raw.format !== undefined && raw.format !== TERRA_FORMAT) throw new Error('format');
+  const blocks = parseBlocks(raw.blocks as unknown[], 0);
+  const l = raw.layout as Record<string, unknown> | undefined;
+  const layout: ScriptLayout | undefined = l && typeof l === 'object' ? parseLayout(l) : undefined;
+  const tp = (raw.titlePage && typeof raw.titlePage === 'object' ? raw.titlePage : {}) as Record<string, unknown>;
+  const titlePage = normalizeTitlePage(
+    Object.fromEntries(Object.entries(tp).filter(([, v]) => typeof v === 'string')) as Partial<TitlePage>,
+  );
+  const doc: ScriptDoc = { version: TERRA_VERSION, titlePage, blocks, ...(layout ? { layout } : {}) };
+  const rv = raw.revision as Record<string, unknown> | undefined;
+  if (rv && typeof rv === 'object') {
+    const revision: Revision = {
+      color: REV_COLORS.includes(rv.color as RevColor) ? (rv.color as RevColor) : 'blue',
+      date: typeof rv.date === 'string' ? rv.date.slice(0, 40) : '',
+    };
+    if (Array.isArray(rv.baseline)) {
+      revision.baseline = (rv.baseline as Record<string, unknown>[])
+        .filter((x) => x && typeof x === 'object' && typeof x.text === 'string')
+        .map((x) => ({ type: (VALID_TYPES.has(x.type as string) ? x.type : 'action') as ElType, text: (x.text as string).replace(/\r?\n/g, ' ') }));
+    }
+    doc.revision = revision;
+  }
+  if (Array.isArray(raw.tags)) {
+    const tags = (raw.tags as Record<string, unknown>[])
+      .filter((x) => x && typeof x === 'object' && typeof x.text === 'string' && TAG_CATS.includes(x.cat as TagCat))
+      .map((x) => ({ text: (x.text as string).replace(/\s+/g, ' ').trim().slice(0, 120), cat: x.cat as TagCat }))
+      .filter((x) => x.text);
+    if (tags.length) doc.tags = tags;
+  }
+  return doc;
+}
+
+const str = (v: unknown, max = 500) => (typeof v === 'string' ? v.slice(0, max) : typeof v === 'number' ? String(v) : '');
+
+function parseLayout(l: Record<string, unknown>): ScriptLayout {
+  const slots = (v: unknown): [string, string, string] | undefined =>
+    Array.isArray(v) && v.length === 3 ? (v.map((s) => str(s, 120)) as [string, string, string]) : undefined;
+  const layout: ScriptLayout = { paper: l.paper === 'a4' ? 'a4' : 'letter', sceneNumbers: l.sceneNumbers !== false };
+  if (['left', 'right', 'both'].includes(l.sceneNumberSide as string)) layout.sceneNumberSide = l.sceneNumberSide as ScriptLayout['sceneNumberSide'];
+  if (l.sceneLetterStyle === 'prefix') layout.sceneLetterStyle = 'prefix';
+  for (const k of ['sceneNumbersLocked', 'pagesLocked', 'firstPageHeader', 'more', 'autoContd', 'sceneContinueds', 'revMarks'] as const) {
+    if (typeof l[k] === 'boolean') layout[k] = l[k] as boolean;
+  }
+  const header = slots(l.header);
+  const footer = slots(l.footer);
+  if (header) layout.header = header;
+  if (footer) layout.footer = footer;
+  for (const k of ['moreText', 'contdText', 'watermark'] as const) if (typeof l[k] === 'string') layout[k] = str(l[k], 60);
+  if (l.styles && typeof l.styles === 'object') {
+    const styles: ScriptLayout['styles'] = {};
+    for (const [type, v] of Object.entries(l.styles as Record<string, Record<string, unknown>>)) {
+      if (!VALID_TYPES.has(type) || !v || typeof v !== 'object') continue;
+      const s: Partial<ElementStyle> = {};
+      for (const f of ['caps', 'bold', 'italic', 'underline'] as const) if (typeof v[f] === 'boolean') s[f] = v[f] as boolean;
+      if (typeof v.before === 'number' && v.before >= 0 && v.before <= 4) s.before = Math.round(v.before);
+      styles[type as ElType] = s;
+    }
+    layout.styles = styles;
+  }
+  return layout;
+}
+
+function parseRuns(v: unknown, len: number): Run[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const runs = v
+    .filter((r): r is [number, number, string] => Array.isArray(r) && r.length === 3 && Number.isInteger(r[0]) && Number.isInteger(r[1]) && typeof r[2] === 'string')
+    .map(([s, e, f]) => [Math.max(0, s), Math.min(len, e), f.replace(/[^bius]/g, '').slice(0, 4)] as Run)
+    .filter(([s, e, f]) => e > s && f);
+  return runs.length ? runs : undefined;
+}
+
+function parseBlocks(items: unknown[], depth: number): Block[] {
   const blocks: Block[] = [];
-  for (const item of raw.blocks as unknown[]) {
+  for (const item of items) {
     if (!item || typeof item !== 'object') continue;
     const b = item as Record<string, unknown>;
     if (typeof b.text !== 'string') continue;
     const type = (VALID_TYPES.has(b.type as string) ? b.type : 'action') as ElType;
     const block: Block = { type, text: b.text.replace(/\r?\n/g, ' ') };
+    const fmt = parseRuns(b.fmt, block.text.length);
+    if (fmt) block.fmt = fmt;
+    if (b.mark === true) block.mark = true;
+    if (typeof b.pg === 'string' && b.pg.trim()) {
+      block.pg = b.pg.slice(0, 12);
+      if (Number.isInteger(b.pgLine) && (b.pgLine as number) > 0) block.pgLine = b.pgLine as number;
+    }
     if (type === 'character' && b.dual === true) block.dual = true;
     if (type === 'scene') {
+      if (typeof b.num === 'string' && b.num.trim()) block.num = b.num.slice(0, 12);
+      if (b.newPage === true) block.newPage = true;
+      if (depth === 0 && Array.isArray(b.omit)) {
+        const omit = parseBlocks(b.omit as unknown[], 1);
+        if (omit.length) block.omit = omit;
+      }
       if (typeof b.synopsis === 'string' && b.synopsis.trim()) block.synopsis = b.synopsis;
       if (CARD_COLORS.includes(b.color as CardColor)) block.color = b.color as CardColor;
       if (Array.isArray(b.takes)) {
-        const str = (v: unknown) => (typeof v === 'string' ? v.slice(0, 500) : typeof v === 'number' ? String(v) : '');
         const takes: Take[] = (b.takes as Record<string, unknown>[])
           .filter((x) => x && typeof x === 'object')
           .map((x) => ({
@@ -255,16 +427,7 @@ export function parseTerra(text: string): ScriptDoc {
     }
     blocks.push(block);
   }
-  const l = raw.layout as Partial<ScriptLayout> | undefined;
-  const layout: ScriptLayout | undefined =
-    l && typeof l === 'object'
-      ? { paper: l.paper === 'a4' ? 'a4' : 'letter', sceneNumbers: l.sceneNumbers !== false }
-      : undefined;
-  const tp = (raw.titlePage && typeof raw.titlePage === 'object' ? raw.titlePage : {}) as Record<string, unknown>;
-  const titlePage = normalizeTitlePage(
-    Object.fromEntries(Object.entries(tp).filter(([, v]) => typeof v === 'string')) as Partial<TitlePage>,
-  );
-  return { version: TERRA_VERSION, titlePage, blocks, ...(layout ? { layout } : {}) };
+  return blocks;
 }
 
 export async function parseScriptFile(file: File): Promise<ScriptDoc> {

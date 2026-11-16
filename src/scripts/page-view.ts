@@ -10,8 +10,10 @@
  * exact character where the PDF line begins. All measurements are done in one
  * read pass and one write pass, so it stays fast on long scripts.
  */
-import { WRAP_WIDTH, lineStarts, pageGeometry, type PageStart } from './pdf';
+import { WRAP_WIDTH, lineStarts, pageGeometry, type LaidPage, type PageDecor, type PageStart } from './pdf';
 import { characterName, type Block } from './types';
+
+const escHtml = (s: string) => s.replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 const DPI = 96;
 const LINE_PX = DPI / 6; // 12pt Courier line
@@ -28,13 +30,19 @@ export interface PageViewInput {
   starts: PageStart[];
   size: 'letter' | 'a4';
   enabled: boolean;
+  /** Laid-out pages (labels, CONTINUED) and their header/footer text. */
+  laid?: LaidPage[];
+  decor?: PageDecor[];
+  watermark?: string;
+  moreText?: string;
+  contdText?: string;
 }
 
 /** Remove all page-view adjustments (margins and spacers). */
 function clear(editor: HTMLElement) {
-  for (const el of editor.querySelectorAll<HTMLElement>('.el[data-pg]')) {
+  for (const el of editor.querySelectorAll<HTMLElement>('.el[data-pb]')) {
     el.style.marginTop = '';
-    delete el.dataset.pg;
+    delete el.dataset.pb;
   }
   for (const sp of editor.querySelectorAll<HTMLElement>('.pg-break')) {
     const parent = sp.parentElement;
@@ -86,7 +94,7 @@ export function applyPageView(input: PageViewInput): void {
   const pageH = pageGeometry(size).heightIn * DPI;
 
   // 1) Build the break points (write phase: spacers start at height 0).
-  type Brk = { el: HTMLElement; spacer?: HTMLElement; contd: boolean };
+  type Brk = { el: HTMLElement; spacer?: HTMLElement; contd: boolean; lead: number };
   const breaks: Brk[] = [];
   for (const s of starts) {
     const el = els[s.block] as HTMLElement | undefined;
@@ -94,8 +102,8 @@ export function applyPageView(input: PageViewInput): void {
     if (!el || !b) continue;
     const contd = CONTINUATION.has(b.type);
     if (s.line === 0 && !contd) {
-      el.dataset.pg = '1';
-      breaks.push({ el, contd });
+      el.dataset.pb = '1';
+      breaks.push({ el, contd, lead: s.lead });
       continue;
     }
     // Page starts inside a block, or continues a speech: break at the PDF line.
@@ -103,13 +111,19 @@ export function applyPageView(input: PageViewInput): void {
     let offset = s.line > 0 ? (lineStarts(b.text, width)[s.line] ?? 0) : 0;
     if (b.type === 'parenthetical' && s.line > 0 && !b.text.trim().startsWith('(')) offset = Math.max(0, offset - 1);
     const spacer = insertSpacer(el, offset);
+    if (contd && s.line === 0 && s.lead === 0) {
+      // Speech moved whole to the next page (MORE/CONT'D switched off).
+      breaks.push({ el, spacer, contd: false, lead: 0 });
+      continue;
+    }
     if (contd) {
       const name = speakerBefore(blocks, s.block);
-      spacer.dataset.more = '(MORE)';
-      spacer.dataset.contd = name ? `${name} (CONT'D)` : "(CONT'D)";
+      const word = (input.contdText || "CONT'D").trim();
+      spacer.dataset.more = `(${(input.moreText || 'MORE').trim()})`;
+      spacer.dataset.contd = name ? `${name} (${word})` : `(${word})`;
       spacer.dataset.type = b.type;
     }
-    breaks.push({ el, spacer, contd });
+    breaks.push({ el, spacer, contd, lead: s.lead });
   }
 
   // 2) Read phase: natural positions (one layout).
@@ -125,26 +139,39 @@ export function applyPageView(input: PageViewInput): void {
   let shift = 0;
   breaks.forEach((br, k) => {
     const prevSheet = sheetTops[k];
-    // A continued speech starts with the NAME (CONT'D) line.
-    const target = prevSheet + pageH + GAP + MARGIN_TOP + (br.contd ? LINE_PX : 0);
+    // Lines printed above the first script line (CONTINUED:, NAME (CONT'D)).
+    const lead = br.lead * LINE_PX;
+    const target = prevSheet + pageH + GAP + MARGIN_TOP + lead;
     const actual = natural[k].top + shift;
     const delta = Math.max(0, target - actual);
     if (br.spacer) br.spacer.style.height = `${delta}px`;
     else br.el.style.marginTop = `${natural[k].margin + delta}px`;
     shift += delta;
     // If the screen text ran long (rare), the sheet grows instead of overlapping.
-    sheetTops.push(actual + delta - MARGIN_TOP - (br.contd ? LINE_PX : 0));
+    sheetTops.push(actual + delta - MARGIN_TOP - lead);
   });
 
   const lastTop = sheetTops[sheetTops.length - 1];
   const lastHeight = Math.max(pageH, contentBottom + shift + MARGIN_BOTTOM - lastTop);
   paper.style.minHeight = `${lastTop + lastHeight}px`;
 
-  // 4) Sheets with page numbers (no number on page 1, like the PDF).
+  // 4) Sheets with header / footer (page number), CONTINUED and the watermark.
+  const lpp = pageGeometry(size).linesPerPage;
+  const slot = (cls: string, texts: string[] | undefined) =>
+    texts?.some(Boolean)
+      ? `<div class="${cls}">${texts.map((s, i) => `<span class="${['l', 'c', 'r'][i]}">${escHtml(s)}</span>`).join('')}</div>`
+      : '';
+  const wm = input.watermark?.trim() ? `<span class="sheet-wm">${escHtml(input.watermark.trim())}</span>` : '';
   layer.innerHTML = sheetTops
     .map((top, k) => {
       const height = k < sheetTops.length - 1 ? sheetTops[k + 1] - GAP - top : lastHeight;
-      return `<div class="sheet" style="top:${top}px;height:${height}px">${k ? `<span class="sheet-no">${k + 1}.</span>` : ''}</div>`;
+      const d = input.decor?.[k];
+      const page = input.laid?.[k];
+      const next = input.laid?.[k + 1];
+      const label = d ? '' : k ? `<div class="sheet-hdr"><span class="r">${escHtml(page?.label ?? String(k + 1))}.</span></div>` : '';
+      const contTop = page?.continued ? `<span class="sheet-cont" style="top:${MARGIN_TOP}px">CONTINUED:</span>` : '';
+      const contBottom = next?.continued ? `<span class="sheet-cont r" style="top:${MARGIN_TOP + (lpp - 1) * LINE_PX}px">(CONTINUED)</span>` : '';
+      return `<div class="sheet" style="top:${top}px;height:${height}px">${wm}${label}${slot('sheet-hdr', d?.header)}${slot('sheet-ftr', d?.footer)}${contTop}${contBottom}</div>`;
     })
     .join('');
 }

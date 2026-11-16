@@ -8,16 +8,59 @@ import { en_ as T, type Key } from '../scripts/i18n';
 
 const icon = (paths: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
-// Dark theme background: screenplay words that float up.
-const fragments = [
-  { text: 'INT.', x: 6, dur: 26, delay: 0, size: 15 },
-  { text: 'FADE IN:', x: 18, dur: 32, delay: 9, size: 13 },
-  { text: 'CUT TO:', x: 34, dur: 28, delay: 4, size: 14 },
-  { text: 'EXT.', x: 52, dur: 30, delay: 14, size: 16 },
-  { text: '(beat)', x: 66, dur: 24, delay: 2, size: 13 },
-  { text: "(CONT'D)", x: 78, dur: 34, delay: 11, size: 12 },
-  { text: 'DISSOLVE TO:', x: 88, dur: 29, delay: 6, size: 12 },
-  { text: '- NIGHT', x: 44, dur: 36, delay: 19, size: 13 },
+// Intro: words that melt into each other (MorphText), then the logo.
+const INTRO_WORDS = ['WRITE', 'REWRITE', 'SHOOT'];
+const INTRO_STEP = 1; // seconds per word
+
+// Illustrations for the feature card stack (300×300, coloured by CSS).
+const art = (body: string) => `<svg class="ill" viewBox="0 0 300 300" aria-hidden="true">${body}</svg>`;
+const lines = (x: number, y: number, ws: number[], gap = 12) =>
+  ws.map((w, i) => `<rect class="ill-line" x="${x}" y="${y + i * gap}" width="${w}" height="5" rx="2.5"/>`).join('');
+const ART = [
+  // 1. A formatted screenplay page with (MORE)
+  art(`<rect class="ill-bg" width="300" height="300"/>
+    <g transform="rotate(-4 150 150)"><rect class="ill-paper" x="62" y="28" width="176" height="236" rx="6"/>
+    <rect class="ill-ink" x="84" y="52" width="104" height="7" rx="3"/>${lines(84, 72, [132, 120, 96])}
+    <rect class="ill-ink" x="134" y="118" width="44" height="6" rx="3"/>${lines(108, 132, [86, 92, 60])}
+    <text class="ill-mono" x="140" y="184">(MORE)</text>
+    <rect class="ill-accent" x="84" y="204" width="124" height="7" rx="3"/>${lines(84, 222, [126, 110])}</g>`),
+  // 2. Smart dropdown under a scene heading
+  art(`<rect class="ill-bg" width="300" height="300"/>
+    <rect class="ill-paper" x="40" y="56" width="220" height="40" rx="10"/>
+    <text class="ill-mono ill-strong" x="58" y="82">INT. DINER -</text><rect class="ill-accent" x="176" y="68" width="3" height="18"/>
+    <rect class="ill-panel" x="70" y="106" width="176" height="148" rx="12"/>
+    <rect class="ill-accent-soft" x="78" y="114" width="160" height="30" rx="8"/>
+    <text class="ill-mono ill-accent-text" x="92" y="134">NIGHT</text>
+    <text class="ill-mono" x="92" y="168">DAY</text><text class="ill-mono" x="92" y="200">MORNING</text><text class="ill-mono" x="92" y="232">CONTINUOUS</text>`),
+  // 3. Index cards with colour labels
+  art(`<rect class="ill-bg" width="300" height="300"/>
+    ${[
+      [36, 40, -5, 'c-red'], [158, 34, 4, 'c-blue'], [40, 160, 3, 'c-green'], [160, 158, -3, 'c-purple'],
+    ]
+      .map(([x, y, r, c]) => `<g transform="rotate(${r} ${Number(x) + 52} ${Number(y) + 50})"><rect class="ill-paper" x="${x}" y="${y}" width="104" height="100" rx="8"/><rect class="ill-tag ${c}" x="${x}" y="${y}" width="104" height="10" rx="4"/>${lines(Number(x) + 12, Number(y) + 26, [70, 80, 54], 14)}</g>`)
+      .join('')}`),
+  // 4. Take log with Good / Maybe / Skip
+  art(`<rect class="ill-bg" width="300" height="300"/>
+    <rect class="ill-paper" x="40" y="40" width="220" height="220" rx="14"/>
+    <text class="ill-mono ill-strong" x="60" y="74">SC 12 · TAKES</text>
+    ${[
+      ['1', 'skip'], ['2', 'maybe'], ['3', 'good'],
+    ]
+      .map(([n, s], i) => `<rect class="ill-row" x="56" y="${92 + i * 52}" width="188" height="40" rx="9"/><circle class="t-${s}" cx="78" cy="${112 + i * 52}" r="8"/><text class="ill-mono" x="96" y="${117 + i * 52}">TAKE ${n}</text>${lines(178, 109 + i * 52, [48])}`)
+      .join('')}`),
+  // 5. Export: one script, three formats
+  art(`<rect class="ill-bg" width="300" height="300"/>
+    <rect class="ill-paper" x="96" y="34" width="108" height="140" rx="6"/>${lines(112, 56, [60, 76, 70, 50, 74, 64, 40])}
+    <path class="ill-arrow" d="M150 184v30m-12-12 12 12 12-12"/>
+    ${['PDF', 'FOUNTAIN', 'TXT']
+      .map((f, i) => `<rect class="${i === 0 ? 'ill-accent' : 'ill-panel'}" x="${26 + i * 86}" y="228" width="78" height="34" rx="17"/><text class="ill-chip${i === 0 ? ' on' : ''}" x="${65 + i * 86}" y="250" text-anchor="middle">${f}</text>`)
+      .join('')}`),
+  // 6. Offline: the laptop keeps it, a .terra file carries it
+  art(`<rect class="ill-bg" width="300" height="300"/>
+    <rect class="ill-panel" x="46" y="70" width="170" height="112" rx="10"/><rect class="ill-paper" x="58" y="82" width="146" height="88" rx="4"/>
+    <path class="ill-check" d="M108 126l14 14 28-28"/><rect class="ill-panel" x="30" y="186" width="202" height="12" rx="6"/>
+    <g transform="rotate(8 228 196)"><path class="ill-paper" d="M196 150h44l18 18v64h-62z"/><path class="ill-fold" d="M240 150v18h18"/>
+    <rect class="ill-accent" x="204" y="200" width="46" height="18" rx="5"/><text class="ill-chip on" x="227" y="213" text-anchor="middle">.terra</text></g>`),
 ];
 
 const features: { t: Key; d: Key; b: Key; icon: string }[] = [
@@ -34,21 +77,48 @@ const features: { t: Key; d: Key; b: Key; icon: string }[] = [
   <head>
     <HeadBoot title={T('land.pageTitle')} />
     <meta name="description" content={T('land.lead')} />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@500;700&display=swap" />
   </head>
   <body class="app landing min-h-screen">
     <Loader label={T('ui.loading')} hidden />
-    <!-- Light theme: rain background (adapted from Uiverse.io by SelfMadeSystem), in Terra purple -->
-    <div class="land-bg rain-bg" aria-hidden="true"></div>
-    <!-- Dark theme: drifting light, drafting grid and screenplay fragments -->
-    <div class="land-bg aurora-bg" aria-hidden="true">
-      <span class="blob b1"></span>
-      <span class="blob b2"></span>
-      <span class="blob b3"></span>
-      <div class="grid-bg"></div>
-      {fragments.map((f) => (
-        <span class="frag" style={`left:${f.x}%;animation-duration:${f.dur}s;animation-delay:${f.delay}s;font-size:${f.size}px`}>{f.text}</span>
-      ))}
+
+    <!-- Intro (MorphText): played once per visit; click, a key or Skip ends it -->
+    <div id="intro" class="intro" aria-hidden="true">
+      <svg class="intro-defs" aria-hidden="true" focusable="false">
+        <defs>
+          <filter id="morph-threshold">
+            <feColorMatrix in="SourceGraphic" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 25 -9" result="goo" />
+            <feComposite in="SourceGraphic" in2="goo" operator="atop" />
+          </filter>
+        </defs>
+      </svg>
+      <div class="intro-morph">
+        <div class="intro-rotator" style={`--total:${INTRO_WORDS.length * INTRO_STEP}s`}>
+          {INTRO_WORDS.map((w, i) => (
+            <span class="intro-word" style={`animation-delay:${0.3 + i * INTRO_STEP}s`}>{w}</span>
+          ))}
+        </div>
+      </div>
+      <div class="intro-final" style={`--at:${0.3 + INTRO_WORDS.length * INTRO_STEP + 0.2}s`}>
+        <Logo id="intro" class="intro-logo" />
+        <p class="intro-sub" data-i18n="intro.sub">{T('intro.sub')}</p>
+      </div>
+      <button type="button" class="intro-skip" data-i18n="intro.skip">{T('intro.skip')}</button>
     </div>
+    <script is:inline>
+      // Decide before the first paint, so returning visitors never see a flash.
+      (function () {
+        var seen = false;
+        try { seen = sessionStorage.getItem('tewrite:intro') === '1'; } catch (e) {}
+        var reduced = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+        if (!seen && !reduced) document.documentElement.classList.add('intro-on');
+      })();
+    </script>
+
+    <!-- Wave grid (Three.js) in Terra colours; a soft gradient shows until it loads or without WebGL -->
+    <div class="land-bg wave-bg" id="wave-bg" aria-hidden="true"><div class="wave-veil"></div></div>
     <header class="land-header">
       <div class="land-wrap flex items-center gap-3 h-16">
         <a href="/" class="home-link" aria-label="Terra Script">
@@ -68,9 +138,15 @@ const features: { t: Key; d: Key; b: Key; icon: string }[] = [
 
     <main>
       <section class="land-wrap land-hero">
+        <span class="land-fade" aria-hidden="true">FADE IN:</span>
         <div class="land-copy">
-          <p class="land-kicker" data-i18n="land.kicker">{T('land.kicker')}</p>
-          <h1 class="land-h1" data-i18n="land.h1">{T('land.h1')}</h1>
+          <p class="land-slug"><span class="land-scene" aria-hidden="true">1</span><span data-i18n="land.slug">{T('land.slug')}</span><span class="land-scene" aria-hidden="true">1</span></p>
+          <p class="land-kicker">(<span data-i18n="land.kicker">{T('land.kicker')}</span>)</p>
+          <h1 class="land-h1" aria-label={T('land.h1')} data-i18n-aria="land.h1">
+            <span class="land-h1-line" data-i18n="land.h1a">{T('land.h1a')}</span>
+            <span class="land-h1-line" data-i18n="land.h1b">{T('land.h1b')}</span>
+            <span class="land-h1-line land-h1-accent" data-i18n="land.h1c">{T('land.h1c')}</span>
+          </h1>
           <p class="land-lead" data-i18n="land.lead">{T('land.lead')}</p>
           <div class="land-ctas">
             <a href="/projects" id="cta-main" class="btn btn-primary btn-lg"><span data-i18n="land.start">{T('land.start')}</span></a>
@@ -78,64 +154,81 @@ const features: { t: Key; d: Key; b: Key; icon: string }[] = [
           </div>
         </div>
 
-        <!-- Animated logo card: adapted from Uiverse.io by Smit-Prajapati, with the Terra Script logo -->
+        <!-- 3D glass logo card: adapted from Uiverse.io by Smit-Prajapati, in Terra colours -->
         <div class="tc-stage">
-          <div class="tc-card" id="logo-card" tabindex="0" role="img" aria-label="Terra Script">
-            <div class="tc-border"></div>
-            <div class="tc-content">
-              <div class="tc-logo">
-                <Logo id="lcard" class="tc-logo-svg" />
-                <span class="tc-trail"></span>
+          <div class="tc-parent" id="logo-card">
+            <div class="tc-card">
+              <div class="tc-logo" aria-hidden="true">
+                <span class="tc-circle tc-circle1"></span>
+                <span class="tc-circle tc-circle2"></span>
+                <span class="tc-circle tc-circle3"></span>
+                <span class="tc-circle tc-circle4"></span>
+                <span class="tc-circle tc-circle5"><Logo id="lcardmark" variant="mark" class="tc-mark" /></span>
               </div>
-              <span class="tc-logo-bottom-text" data-i18n="land.cardTag">{T('land.cardTag')}</span>
+              <div class="tc-glass"></div>
+              <div class="tc-content">
+                <Logo id="lcard" class="tc-title" />
+                <span class="tc-tag" data-i18n="land.cardTag">{T('land.cardTag')}</span>
+                <span class="tc-text" data-i18n="land.cardBottom">{T('land.cardBottom')}</span>
+              </div>
+              <div class="tc-bottom">
+                <div class="tc-icons" aria-hidden="true">
+                  <span class="tc-icon"><svg viewBox="0 0 24 24"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zm0 1.5L18.5 9H14zM8 13h8v1.5H8zm0 3h5v1.5H8z"/></svg></span>
+                  <span class="tc-icon"><svg viewBox="0 0 24 24"><path d="M3 5h8v6H3zm10 0h8v6h-8zM3 13h8v6H3zm10 0h8v6h-8z"/></svg></span>
+                  <span class="tc-icon"><svg viewBox="0 0 24 24"><path d="M3 10h18v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2zm.3-4.6 15-3.9.9 3.4-15 3.9z"/></svg></span>
+                </div>
+                <a href="/projects" class="tc-more"><span data-i18n="land.openApp">{T('land.openApp')}</span><svg viewBox="0 0 24 24"><path d="m9 6 6 6-6 6"/></svg></a>
+              </div>
             </div>
-            <span class="tc-bottom-text" data-i18n="land.cardBottom">{T('land.cardBottom')}</span>
           </div>
         </div>
       </section>
 
-      <section class="land-wrap land-features" aria-labelledby="features-title">
-        <h2 id="features-title" class="land-h2" data-i18n="land.featuresTitle">{T('land.featuresTitle')}</h2>
-        <!-- Flip cards: adapted from Uiverse.io by ElSombrero2, in Terra colours -->
-        <ul class="land-grid">
-          {features.map((f) => (
-            <li class="flip-reveal">
-              <div class="flip-card" tabindex="0" role="button" aria-pressed="false" aria-label={T(f.t)} data-i18n-aria={f.t}>
-                <div class="flip-content">
-                  <div class="flip-back">
-                    <div class="flip-back-content">
-                      <span class="flip-icon" set:html={f.icon} />
-                      <strong class="flip-name" data-i18n={f.t}>{T(f.t)}</strong>
-                      <span class="flip-hint" data-i18n="land.flipHint">{T('land.flipHint')}</span>
-                    </div>
-                  </div>
-                  <div class="flip-front">
-                    <div class="flip-img" aria-hidden="true">
-                      <div class="flip-circle"></div>
-                      <div class="flip-circle flip-circle-bottom"></div>
-                      <div class="flip-circle flip-circle-right"></div>
-                    </div>
-                    <div class="flip-front-content">
-                      <small class="flip-badge" data-i18n={f.b}>{T(f.b)}</small>
-                      <div class="flip-description">
-                        <div class="flip-title">
-                          <p><strong data-i18n={f.t}>{T(f.t)}</strong></p>
-                          <span class="flip-title-icon" set:html={f.icon} />
-                        </div>
-                        <p class="flip-text" data-i18n={f.d}>{T(f.d)}</p>
-                        <p class="flip-footer">Terra Script</p>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </li>
+      <!-- Tilted ribbon of feature names, scrolling like an end-credits crawl turned sideways -->
+      <div class="land-ribbon" aria-hidden="true">
+        <div class="land-ribbon-track">
+          {[0, 1].map(() => (
+            <span class="land-ribbon-set">
+              {features.map((f) => (<><span data-i18n={f.t}>{T(f.t)}</span><span class="land-ribbon-dot">✦</span></>))}
+            </span>
           ))}
-        </ul>
+        </div>
+      </div>
+
+      <section class="land-wrap land-features" aria-labelledby="features-title">
+        <p class="land-slug"><span class="land-scene" aria-hidden="true">2</span><span data-i18n="land.slug2">{T('land.slug2')}</span><span class="land-scene" aria-hidden="true">2</span></p>
+        <h2 id="features-title" class="land-h2" data-i18n="land.featuresTitle">{T('land.featuresTitle')}</h2>
+        <!-- Feature card stack: adapted from a stacked "testimonials" card carousel, in Terra colours -->
+        <div class="fstack" id="fstack" role="region" aria-roledescription="carousel" aria-labelledby="features-title" tabindex="0">
+          <div class="fstack-count" aria-hidden="true"><span id="fs-index">1</span> / {features.length}</div>
+          <div class="fstack-cards">
+            {features.map((f, i) => (
+              <figure class="fcard" data-i={i} aria-hidden={i ? 'true' : 'false'} set:html={ART[i]} />
+            ))}
+          </div>
+          <div class="fstack-text" aria-live="polite">
+            {features.map((f, i) => (
+              <article class="fstack-item" data-i={i} hidden={i !== 0}>
+                <span class="fstack-badge"><span class="fstack-icon" set:html={f.icon} /><span data-i18n={f.b}>{T(f.b)}</span></span>
+                <h3 class="fstack-title" data-i18n={f.t}>{T(f.t)}</h3>
+                <p class="fstack-desc" data-i18n={f.d}>{T(f.d)}</p>
+              </article>
+            ))}
+          </div>
+          <div class="fstack-nav">
+            <button type="button" class="fstack-btn" id="fs-prev" aria-label={T('land.prev')} data-i18n-aria="land.prev" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 12H5"/><path d="m12 19-7-7 7-7"/></svg>
+            </button>
+            <button type="button" class="fstack-btn" id="fs-next" aria-label={T('land.next')} data-i18n-aria="land.next">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+            </button>
+          </div>
+        </div>
       </section>
     </main>
 
     <footer class="land-wrap land-footer">
+      <span class="land-fadeout" aria-hidden="true">FADE OUT.</span>
       <span data-i18n="land.footer">{T('land.footer')}</span>
     </footer>
 

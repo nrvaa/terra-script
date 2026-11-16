@@ -1,5 +1,6 @@
 ---
 import '../styles/global.css';
+import '../styles/features.css';
 import HeadBoot from '../components/HeadBoot.astro';
 import Logo from '../components/Logo.astro';
 import ThemeSwitch from '../components/ThemeSwitch.astro';
@@ -54,7 +55,7 @@ const menus: { id: string; key: Key; items: Item[] }[] = [
       { key: 'm.viewScript', action: 'view-script', check: 'view=script' },
       { key: 'm.viewCards', action: 'view-cards', check: 'view=cards' },
       'sep',
-      { key: 'm.showTitle', action: 'toggle-title-sheet', check: 'showTitlePage' },
+      { key: 'm.showTitle', action: 'toggle-title-sheet', check: 'titleSheet' },
       { key: 'm.sceneNumbers', action: 'toggle-scene-numbers', check: 'sceneNumbers' },
       { key: 'm.pageMarkers', action: 'toggle-page-markers', check: 'pageMarkers' },
       { key: 'm.sidebar', action: 'toggle-sidebar', check: 'sidebar', kbd: 'Ctrl+\\' },
@@ -73,15 +74,64 @@ const menus: { id: string; key: Key; items: Item[] }[] = [
       { key: 'm.zoomIn', action: 'zoom-in', kbd: 'Ctrl+=' },
       { key: 'm.zoomOut', action: 'zoom-out', kbd: 'Ctrl+-' },
       { key: 'm.zoomReset', action: 'zoom-reset' },
+    ],
+  },
+  {
+    id: 'revisions',
+    key: 'menu.revisions',
+    items: [
+      { key: 'm.lineHistory', action: 'line-history' },
       'sep',
-      { key: 'm.langEn', action: 'lang-en', check: 'lang=en' },
-      { key: 'm.langId', action: 'lang-id', check: 'lang=id' },
+      { key: 'm.trackChanges', action: 'toggle-track', check: 'tracking' },
+      { key: 'm.showChanges', action: 'toggle-show-revisions', check: 'showRevisions' },
+      { key: 'm.acceptReject', action: 'accept-reject' },
+      { key: 'm.dateWriters', action: 'date-writers' },
+      'sep',
+      { key: 'm.markChange', action: 'mark-change' },
+      { key: 'm.unmarkChange', action: 'unmark-change' },
+      'sep',
+      { key: 'm.timeline', action: 'timeline' },
+      { key: 'm.duplicateDoc', action: 'duplicate-doc' },
+      { key: 'm.saveSnapshot', action: 'save-snapshot' },
+      { key: 'm.snapshots', action: 'snapshots' },
     ],
   },
   {
     id: 'production',
     key: 'menu.production',
-    items: [{ key: 'm.takes', action: 'takes', kbd: 'Alt+T' }],
+    items: [
+      { key: 'm.sceneNumbersDlg', action: 'dlg-scene-numbers' },
+      { key: 'm.headersFooters', action: 'dlg-headers' },
+      { key: 'm.moresContds', action: 'dlg-mores' },
+      { key: 'm.watermark', action: 'dlg-watermark' },
+      'sep',
+      { key: 'm.lockPages', action: 'toggle-lock-pages', check: 'pagesLocked' },
+      'sep',
+      { key: 'm.separateScene', action: 'toggle-separate-scene', check: 'curSceneNewPage' },
+      { key: 'm.omitScene', action: 'toggle-omit-scene', check: 'curSceneOmitted' },
+      'sep',
+      { key: 'm.takes', action: 'takes', kbd: 'Alt+T' },
+    ],
+  },
+  {
+    id: 'tools',
+    key: 'menu.tools',
+    items: [
+      { key: 'm.bold', action: 'fmt-b', kbd: 'Ctrl+B', check: 'fmt=b' },
+      { key: 'm.italic', action: 'fmt-i', kbd: 'Ctrl+I', check: 'fmt=i' },
+      { key: 'm.underline', action: 'fmt-u', kbd: 'Ctrl+U', check: 'fmt=u' },
+      { key: 'm.strike', action: 'fmt-s', kbd: 'Ctrl+Shift+X', check: 'fmt=s' },
+      'sep',
+      { key: 'm.undo', action: 'undo', kbd: 'Ctrl+Z' },
+      { key: 'm.redo', action: 'redo', kbd: 'Ctrl+Y' },
+      'sep',
+      { key: 'm.customFormat', action: 'settings-format' },
+      { key: 'm.tagger', action: 'tagger' },
+      { key: 'm.renameChar', action: 'rename-char' },
+      { key: 'm.shorten', action: 'shorten' },
+      { key: 'm.readAloud', action: 'read-aloud', kbd: 'Alt+R', check: 'reading' },
+      { key: 'm.voices', action: 'read-voices' },
+    ],
   },
   {
     id: 'reports',
@@ -90,6 +140,23 @@ const menus: { id: string; key: Key; items: Item[] }[] = [
       { key: 'm.reportScenes', action: 'report-scenes' },
       { key: 'm.reportChars', action: 'report-characters' },
       { key: 'm.reportStats', action: 'report-stats' },
+    ],
+  },
+  {
+    id: 'customize',
+    key: 'menu.customize',
+    items: [
+      { key: 'm.cEditing', action: 'settings-editing' },
+      { key: 'm.cDisplay', action: 'settings-display' },
+      { key: 'm.cFormat', action: 'settings-format' },
+      { key: 'm.cNotifications', action: 'settings-notifications' },
+      { key: 'm.cPdf', action: 'settings-pdf' },
+      { key: 'm.cPage', action: 'settings-page' },
+      { key: 'm.cMisc', action: 'settings-misc' },
+      'sep',
+      { key: 'm.langEn', action: 'lang-en', check: 'lang=en' },
+      { key: 'm.langId', action: 'lang-id', check: 'lang=id' },
+      { key: 'm.docLang', action: 'settings-misc' },
     ],
   },
   {
@@ -176,6 +243,7 @@ const hintKey = (type: string) => `hint.${type}` as Key;
     <!-- Element toolbar -->
     <div id="el-toolbar" class="toolbar shrink-0" role="toolbar" aria-label={T('ui.elementTypes')} data-i18n-aria="ui.elementTypes">
       <div class="toolbar-inner">
+        <span class="tool-glider" aria-hidden="true"></span>
         <button type="button" class="tool" id="btn-title" title={T('ui.titleBtnTip')} data-i18n-title="ui.titleBtnTip" aria-pressed="false">
           <span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M9 10h6"/><path d="M10 13h4"/><path d="M9 18h2"/></svg></span>
           <span class="tool-label" data-i18n="ui.titleBtn">{T('ui.titleBtn')}</span>
@@ -205,6 +273,12 @@ const hintKey = (type: string) => `hint.${type}` as Key;
           <span class="tool-label">Dual</span>
         </button>
       </div>
+      <div class="fmt-group" role="group" aria-label={T('ui.fmtGroup')} data-i18n-aria="ui.fmtGroup">
+        <button type="button" class="fmt-btn" data-fmt="b" aria-pressed="false" title={T('m.bold') + ' (Ctrl+B)'} data-i18n-title="m.bold" data-title-suffix=" (Ctrl+B)"><b>B</b></button>
+        <button type="button" class="fmt-btn" data-fmt="i" aria-pressed="false" title={T('m.italic') + ' (Ctrl+I)'} data-i18n-title="m.italic" data-title-suffix=" (Ctrl+I)"><i>I</i></button>
+        <button type="button" class="fmt-btn" data-fmt="u" aria-pressed="false" title={T('m.underline') + ' (Ctrl+U)'} data-i18n-title="m.underline" data-title-suffix=" (Ctrl+U)"><u>U</u></button>
+        <button type="button" class="fmt-btn" data-fmt="s" aria-pressed="false" title={T('m.strike') + ' (Ctrl+Shift+X)'} data-i18n-title="m.strike" data-title-suffix=" (Ctrl+Shift+X)"><s>S</s></button>
+      </div>
       <select id="type-select" class="type-select" aria-label={T('ui.elementTypes')} data-i18n-aria="ui.elementTypes">
         {ELEMENTS.map((e) => <option value={e.type}>{e.label}</option>)}
       </select>
@@ -220,6 +294,7 @@ const hintKey = (type: string) => `hint.${type}` as Key;
           <button type="button" role="tab" data-tab="scenes"><span data-i18n="tab.scenes">{T('tab.scenes')}</span> <span id="scene-count" class="pill">0</span></button>
           <button type="button" role="tab" data-tab="characters" data-i18n="tab.characters">{T('tab.characters')}</button>
           <button type="button" role="tab" data-tab="stats" data-i18n="tab.stats">{T('tab.stats')}</button>
+          <button type="button" role="tab" data-tab="tags" data-i18n="tab.tags">{T('tab.tags')}</button>
           <button type="button" class="panel-hide" id="btn-hide-sidebar" title={T('ui.hidePanel')} aria-label={T('ui.hidePanel')} data-i18n-title="ui.hidePanel" data-i18n-aria="ui.hidePanel">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m16 10-2 2 2 2"/></svg>
           </button>
@@ -228,6 +303,7 @@ const hintKey = (type: string) => `hint.${type}` as Key;
           <ol id="scene-list" data-panel="scenes" class="nav-list"></ol>
           <ul id="char-list" data-panel="characters" class="nav-list" hidden></ul>
           <dl id="stats-list" data-panel="stats" class="p-3 grid gap-2" hidden></dl>
+          <div id="tag-panel" data-panel="tags" class="tag-panel" hidden></div>
         </div>
       </aside>
 
@@ -236,6 +312,10 @@ const hintKey = (type: string) => `hint.${type}` as Key;
       <main class="desk flex-1 overflow-auto">
         <section id="title-sheet" class="paper title-sheet" aria-label={T('sheet.label')} data-i18n-aria="sheet.label">
           <span class="sheet-label" data-i18n="sheet.label">{T('sheet.label')}</span>
+          <button type="button" class="sheet-hide" id="btn-hide-title" title={T('sheet.hideTip')} data-i18n-title="sheet.hideTip">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m18 15-6-6-6 6"/></svg>
+            <span data-i18n="sheet.hide">{T('sheet.hide')}</span>
+          </button>
           <div class="tp-main">
             {(
               [
@@ -289,6 +369,18 @@ const hintKey = (type: string) => `hint.${type}` as Key;
 
     <input id="file-input" type="file" accept=".terra,.tewrite,.json,.fountain,.spmd,.txt,text/plain" hidden />
     <div id="toast" class="toast" role="status" hidden></div>
+    <div id="ra-bar" class="ra-bar" role="region" aria-label={T('ra.label')} data-i18n-aria="ra.label" hidden>
+      <span class="ra-wave" aria-hidden="true"><i></i><i></i><i></i><i></i></span>
+      <span class="ra-status" data-ra="status" aria-live="polite"></span>
+      <button type="button" class="ra-btn" data-ra="prev" title={T('ra.prev')} aria-label={T('ra.prev')} data-i18n-title="ra.prev" data-i18n-aria="ra.prev"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M6 5h2v14H6zM20 5v14L9 12z"/></svg></button>
+      <button type="button" class="ra-btn ra-play" data-ra="play" data-state="play" title={T('ra.play')} aria-label={T('ra.play')}><svg class="i-play" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg><svg class="i-pause" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg></button>
+      <button type="button" class="ra-btn" data-ra="next" title={T('ra.next')} aria-label={T('ra.next')} data-i18n-title="ra.next" data-i18n-aria="ra.next"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M16 5h2v14h-2zM4 5v14l11-7z"/></svg></button>
+      <select class="ra-rate" data-ra="rate" title={T('ra.speed')} aria-label={T('ra.speed')} data-i18n-title="ra.speed" data-i18n-aria="ra.speed">
+        <option value="0.8">0.8×</option><option value="1" selected>1×</option><option value="1.2">1.2×</option><option value="1.5">1.5×</option>
+      </select>
+      <button type="button" class="ra-btn" data-ra="voices" title={T('ra.voices')} aria-label={T('ra.voices')} data-i18n-title="ra.voices" data-i18n-aria="ra.voices"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="8" r="4"/><path d="M4 21a8 8 0 0 1 16 0"/></svg></button>
+      <button type="button" class="ra-btn" data-ra="stop" title={T('ra.stop')} aria-label={T('ra.stop')} data-i18n-title="ra.stop" data-i18n-aria="ra.stop"><svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><rect x="6" y="6" width="12" height="12" rx="2"/></svg></button>
+    </div>
 
     <!-- Export dialog -->
     <dialog id="dlg-export" class="dialog dialog-wide" aria-labelledby="ex-heading">
@@ -410,6 +502,9 @@ const hintKey = (type: string) => `hint.${type}` as Key;
           ))}
           <div class="help-row"><span>Dual dialogue</span><kbd>Alt+D</kbd></div>
           <div class="help-row"><span data-i18n="help.undo">{T('help.undo')}</span><kbd>Ctrl+Z</kbd> <kbd>Ctrl+Y</kbd></div>
+          <div class="help-row"><span data-i18n="help.format">{T('help.format')}</span><kbd>Ctrl+B</kbd> <kbd>Ctrl+I</kbd> <kbd>Ctrl+U</kbd></div>
+          <div class="help-row"><span data-i18n="help.strike">{T('help.strike')}</span><kbd>Ctrl+Shift+X</kbd></div>
+          <div class="help-row"><span data-i18n="help.readAloud">{T('help.readAloud')}</span><kbd>Alt+R</kbd></div>
           <div class="help-row"><span data-i18n="help.save">{T('help.save')}</span><kbd>Ctrl+S</kbd> <kbd>Ctrl+Shift+S</kbd></div>
           <div class="help-row"><span data-i18n="help.open">{T('help.open')}</span><kbd>Ctrl+O</kbd></div>
           <div class="help-row"><span data-i18n="help.pdf">{T('help.pdf')}</span><kbd>Ctrl+Shift+E</kbd></div>
