@@ -15,6 +15,7 @@ import {
 } from './projects';
 import { applyI18n, getLang, sampleScript, setLang, t, type Lang } from './i18n';
 import { emptyTitlePage } from './types';
+import { saveFile } from './save-file';
 import { hideLoader, initThemeSwitches, showLoader, syncThemeSwitches, themeTransition } from './ui-effects';
 
 /* -------------------------------------------------------------------- */
@@ -233,14 +234,7 @@ async function downloadProject(id: string) {
   const p = await loadProject(id);
   if (!p) return;
   const name = (p.doc.titlePage.title.trim() || t('file.default')).replace(/[\\/:*?"<>|]+/g, '').replace(/\s+/g, '-').toLowerCase();
-  const url = URL.createObjectURL(new Blob([serializeTerra(p.doc)], { type: 'application/json' }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = `${name}.terra`;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  if (!(await saveFile(`${name}.terra`, serializeTerra(p.doc), 'application/json'))) return;
   await markBackedUp(id);
   toast(t('bk.saved'));
   await refresh();

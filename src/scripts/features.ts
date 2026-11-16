@@ -86,7 +86,7 @@ export interface AppCtx {
   lastLayout(): LaidPage[];
   saveNow(): Promise<void>;
   toast(msg: string): void;
-  download(name: string, content: string, type: string): void;
+  download(name: string, content: string, type: string): Promise<boolean>;
   fileBase(): string;
   sceneAt(index: number): number | null;
   setSidebarTab(tab: string): void;

@@ -27,6 +27,7 @@ import {
   writeUnsaved,
 } from './projects';
 import { buildPrintHtml } from './print';
+import { saveFile } from './save-file';
 import { PLACEHOLDER_TYPES, applyI18n, getLang, sampleScript, setLang, t, type Key, type Lang } from './i18n';
 import {
   ELEMENTS,
@@ -888,7 +889,8 @@ function relTime(ts: number): string {
 /** Save, download the complete project as .terra and remember the backup. */
 async function downloadTerra() {
   await saveNow();
-  download(`${fileBase()}.terra`, serializeTerra(currentDoc()), 'application/json');
+  // Cancelled in the desktop Save dialog: nothing was backed up.
+  if (!(await download(`${fileBase()}.terra`, serializeTerra(currentDoc()), 'application/json'))) return;
   if (projectId) {
     try {
       await markBackedUp(projectId);
@@ -1015,15 +1017,9 @@ $('#char-list').addEventListener('click', (e) => {
   if (btn) openRenameChar(btn.dataset.rename);
 });
 
+/** Download in the browser; native Save dialog in the desktop app. False when cancelled. */
 function download(name: string, content: string, type: string) {
-  const url = URL.createObjectURL(new Blob([content], { type }));
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
+  return saveFile(name, content, type);
 }
 
 // Importing a file creates a new project and opens it.
@@ -1143,7 +1139,7 @@ exportForm.addEventListener('submit', () => {
   runExport(c);
 });
 
-function runExport(c: ExportChoice) {
+async function runExport(c: ExportChoice) {
   editor.flush();
   const blocks = editor.getBlocks();
   const tp = c.title && titlePage.title.trim() ? titlePage : undefined;
@@ -1153,12 +1149,13 @@ function runExport(c: ExportChoice) {
       : null;
   const file = `${fileBase()}.${c.format}`;
   try {
+    let saved: boolean;
     if (c.format === 'terra') {
-      downloadTerra();
+      await downloadTerra();
       return;
     } else if (c.format === 'pdf') {
       const blob = buildPdf(blocks, { ...features.layoutOptions(blocks), titlePage: tp, script: c.script, report });
-      downloadBlob(file, blob);
+      saved = await saveFile(file, blob);
     } else {
       const parts: string[] = [];
       if (c.format === 'fountain') {
@@ -1171,24 +1168,13 @@ function runExport(c: ExportChoice) {
         parts.push(toPlainText(c.script ? blocks : [], tp).trimEnd());
         if (report) parts.push(reportToText(report));
       }
-      download(file, parts.filter(Boolean).join(c.format === 'txt' ? '\n\n\f\n' : '\n\n') + '\n', 'text/plain');
+      saved = await download(file, parts.filter(Boolean).join(c.format === 'txt' ? '\n\n\f\n' : '\n\n') + '\n', 'text/plain');
     }
-    toast(t('ex.done', { file }));
+    if (saved) toast(t('ex.done', { file }));
   } catch (err) {
     console.error(err);
     toast(t('toast.pdfFail'));
   }
-}
-
-function downloadBlob(name: string, blob: Blob) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = name;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(() => URL.revokeObjectURL(url), 2000);
 }
 
 function printScript() {

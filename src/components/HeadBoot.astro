@@ -1,4 +1,15 @@
 ---
+// Fonts ship with the app (no Google Fonts request), so the desktop build
+// and the web version look the same offline.
+import '@fontsource/courier-prime/latin-400.css';
+import '@fontsource/courier-prime/latin-400-italic.css';
+import '@fontsource/courier-prime/latin-700.css';
+import '@fontsource/courier-prime/latin-700-italic.css';
+import '@fontsource/inter/latin-400.css';
+import '@fontsource/inter/latin-500.css';
+import '@fontsource/inter/latin-600.css';
+import '@fontsource/inter/latin-700.css';
+
 interface Props {
   title: string;
 }
@@ -9,14 +20,10 @@ const { title } = Astro.props;
 <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <meta name="generator" content={Astro.generator} />
-<link rel="preconnect" href="https://fonts.googleapis.com" />
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-<link
-  href="https://fonts.googleapis.com/css2?family=Courier+Prime:ital,wght@0,400;0,700;1,400;1,700&family=Inter:wght@400;500;600;700&display=swap"
-  rel="stylesheet"
-/>
 <title>{title}</title>
 <script is:inline>
+  // Desktop app (Tauri): the marketing page isn't needed, go straight to the projects.
+  if ('__TAURI_INTERNALS__' in window && location.pathname === '/') location.replace('/projects');
   // Apply theme, paper colour and language before paint to avoid a flash.
   try {
     const s = JSON.parse(localStorage.getItem('tewrite:settings') || '{}');
