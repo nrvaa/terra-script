@@ -2,7 +2,7 @@
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Terra Script",
   "mainBinaryName": "terra-script",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "identifier": "com.terrascript.desktop",
   "build": {
     "frontendDist": "../dist",
@@ -21,7 +21,8 @@
         "minWidth": 760,
         "minHeight": 560,
         "center": true,
-        "resizable": true
+        "resizable": true,
+        "dragDropEnabled": false
       }
     ],
     "security": {

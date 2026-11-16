@@ -224,7 +224,7 @@ function buildUnits(blocks: Block[], opts: LayoutOptions): Unit[] {
   const at = kept.map((k) => k.i);
   const labels = sceneLabels(blocks, opts);
   const contdWord = (opts.contdText || "CONT'D").trim();
-  const autoContd = opts.autoContd ? autoContdCues(blocks) : new Set<number>();
+  const autoContd = opts.autoContd !== false ? autoContdCues(blocks) : new Set<number>();
   const style = (b: Block) => elementStyle(opts, b.type);
   const side = opts.sceneNumberSide ?? 'both';
 
@@ -582,7 +582,7 @@ const WIN_ANSI: Record<number, number> = {
   0x2122: 0x99, 0x0161: 0x9a, 0x203a: 0x9b, 0x0153: 0x9c, 0x017e: 0x9e, 0x0178: 0x9f,
 };
 
-function pdfString(s: string): string {
+export function pdfString(s: string): string {
   let out = '(';
   for (const ch of s.normalize('NFC')) {
     const c = ch.codePointAt(0)!;

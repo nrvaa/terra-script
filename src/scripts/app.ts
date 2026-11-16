@@ -9,17 +9,21 @@ import { buildReport, characterStats, reportToText } from './report';
 import { createCardsBoard } from './cards';
 import { renameCharacter } from './rename';
 import { createTakesPanel } from './takes';
+import { createStoryboard, panelLabel } from './storyboard';
+import { buildStoryboardPdf } from './storyboard-pdf';
 import {
   clearUnsaved,
   createProject,
   editorUrl,
+  gcImages,
+  getImage,
   importFile,
   loadProject,
   markBackedUp,
   migrateLegacy,
   requestPersistence,
   saveProject,
-  serializeTerra,
+  serializeProject,
   setBackupReminder,
   shouldRemindBackup,
   type ProjectMeta,
@@ -30,8 +34,10 @@ import { buildPrintHtml } from './print';
 import { saveFile } from './save-file';
 import { PLACEHOLDER_TYPES, applyI18n, getLang, sampleScript, setLang, t, type Key, type Lang } from './i18n';
 import {
+  ASPECT_RATIO,
   ELEMENTS,
   LABELS,
+  SHOT_ABBR,
   NEXT_ON_ENTER,
   TAB_NEXT,
   characterName,
@@ -70,7 +76,7 @@ interface Settings {
   exportScript: boolean;
   exportStats: boolean;
   exportChars: boolean;
-  view: 'script' | 'cards';
+  view: 'script' | 'cards' | 'board';
   exportTakes: boolean;
   // Customize
   autocomplete: boolean;
@@ -241,7 +247,7 @@ const ctx: AppCtx = {
     }
     layoutX = next as typeof layoutX;
     layoutChanged();
-    if (settings.view === 'cards') board.render();
+    renderViews();
   },
   revision: () => revision,
   setRevision(r) {
@@ -337,7 +343,7 @@ function afterChange() {
   persist();
   renderSidebar();
   layoutPages();
-  if (settings.view === 'cards' && !board.isEditing()) board.render();
+  renderViews(true);
   takesPanel.refresh();
   updateTakeStatus(editor.currentIndex());
 }
@@ -362,7 +368,7 @@ function openDoc(doc: { titlePage?: Partial<TitlePage>; blocks: Block[]; layout?
   updateDocTitle();
   renderSidebar();
   layoutPages();
-  if (settings.view === 'cards') board.render();
+  renderViews();
 }
 
 /** Replace the open project's content (e.g. with the sample) and save it. */
@@ -447,6 +453,78 @@ const board = createCardsBoard(boardEl, editor, {
 });
 
 /* -------------------------------------------------------------------- */
+/* Storyboard                                                            */
+/* -------------------------------------------------------------------- */
+
+const storyboardEl = $('#storyboard');
+const storyboard = createStoryboard(storyboardEl, editor, {
+  projectId,
+  sceneNumbers: () => settings.sceneNumbers,
+  sceneLabels: (blocks) => sceneLabels(blocks, layoutX),
+  aspect: () => layoutX.boardAspect ?? '16:9',
+  setAspect: (a) => ctx.setLayout({ boardAspect: a === '16:9' ? undefined : a }),
+  onOpenScene: (blockIndex) => {
+    setView('script');
+    editor.focus(blockIndex);
+  },
+  onExport: () => void exportStoryboard(),
+  toast,
+});
+
+/** Re-render the card or storyboard view after a change (optionally not while the user types in it). */
+function renderViews(unlessEditing = false) {
+  if (settings.view === 'cards' && !(unlessEditing && board.isEditing())) board.render();
+  else if (settings.view === 'board' && !(unlessEditing && storyboard.isEditing())) storyboard.render();
+}
+
+async function exportStoryboard() {
+  if (!projectId) return;
+  editor.flush();
+  toast(t('sb.exporting'));
+  const blocks = editor.getBlocks();
+  const labels = sceneLabels(blocks, layoutX);
+  const aspect = layoutX.boardAspect ?? '16:9';
+  let n = 0;
+  const scenes = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const b = blocks[i];
+    if (b.type !== 'scene') continue;
+    n++;
+    const no = settings.sceneNumbers ? (labels.get(i) ?? String(n)) : '';
+    const panels = [];
+    for (const [k, p] of (b.board ?? []).entries()) {
+      const details = [
+        p.shot ? SHOT_ABBR[p.shot] : '',
+        p.angle ? t(`sb.angle.${p.angle}` as Key) : '',
+        p.move ? t(`sb.move.${p.move}` as Key) : '',
+        p.dur ?? '',
+      ].filter(Boolean);
+      panels.push({
+        label: panelLabel(no || null, k),
+        details: details.join(' · '),
+        note: p.note ?? '',
+        image: p.img ? await getImage(projectId, p.img).catch(() => undefined) : undefined,
+      });
+    }
+    scenes.push({ label: no, heading: b.text.trim().toUpperCase() || t('nav.untitledScene'), panels });
+  }
+  try {
+    const blob = await buildStoryboardPdf(scenes, {
+      title: titlePage.title.trim() || t('file.default'),
+      kind: t('view.board'),
+      paper: settings.paper,
+      aspect: ASPECT_RATIO[aspect],
+      pageLabel: (page, total) => t('sb.pageOf', { n: page, total }),
+    });
+    const file = `${fileBase()} - ${t('view.board')}.pdf`;
+    if (await saveFile(file, blob)) toast(t('ex.done', { file }));
+  } catch (err) {
+    console.error(err);
+    toast(t('toast.pdfFail'));
+  }
+}
+
+/* -------------------------------------------------------------------- */
 /* Take log                                                              */
 /* -------------------------------------------------------------------- */
 
@@ -493,6 +571,9 @@ function toggleTakes() {
   if (settings.view === 'cards') {
     const card = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.scard');
     scene = card ? Number(card.dataset.block) : null;
+  } else if (settings.view === 'board') {
+    const sec = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.sb-scene');
+    scene = sec ? Number(sec.dataset.block) : null;
   } else scene = sceneAt(editor.currentIndex());
   takesPanel.toggle(scene);
 }
@@ -523,21 +604,23 @@ $('#btn-takes').addEventListener('click', toggleTakes);
 function setView(view: Settings['view']) {
   settings.view = view;
   const cards = view === 'cards';
+  const sb = view === 'board';
   boardEl.hidden = !cards;
-  $('main.desk').hidden = cards;
-  $('#el-toolbar').hidden = cards;
+  storyboardEl.hidden = !sb;
+  $('main.desk').hidden = cards || sb;
+  $('#el-toolbar').hidden = cards || sb;
   for (const r of document.querySelectorAll<HTMLInputElement>('input[name=view]')) r.checked = r.value === view;
   editor.closeSuggestions();
   applySettings();
-  if (cards) {
+  if (cards || sb) {
     editor.flush();
-    board.render();
-    // Start on the card of the scene the cursor was in.
+    renderViews();
+    // Start at the scene the cursor was in.
     const at = editor.currentIndex();
     const blocks = editor.getBlocks();
     let scene = -1;
     for (let i = 0; i <= at && i < blocks.length; i++) if (blocks[i].type === 'scene') scene = i;
-    if (scene >= 0) board.focusScene(scene);
+    if (scene >= 0) (cards ? board : storyboard).focusScene(scene);
   } else {
     layoutPages();
     editor.focus();
@@ -664,6 +747,7 @@ for (const list of ['#scene-list']) {
     if (!btn) return;
     if (isNarrow()) setDrawer(false);
     if (settings.view === 'cards') board.focusScene(Number(btn.dataset.block));
+    else if (settings.view === 'board') storyboard.focusScene(Number(btn.dataset.block));
     else editor.focus(Number(btn.dataset.block));
   });
 }
@@ -890,7 +974,7 @@ function relTime(ts: number): string {
 async function downloadTerra() {
   await saveNow();
   // Cancelled in the desktop Save dialog: nothing was backed up.
-  if (!(await download(`${fileBase()}.terra`, serializeTerra(currentDoc()), 'application/json'))) return;
+  if (!(await download(`${fileBase()}.terra`, await serializeProject(projectId, currentDoc()), 'application/json'))) return;
   if (projectId) {
     try {
       await markBackedUp(projectId);
@@ -1317,7 +1401,7 @@ const actions: Record<string, () => void> = {
   'toggle-scene-numbers': () => {
     settings.sceneNumbers = !settings.sceneNumbers;
     layoutChanged();
-    if (settings.view === 'cards') board.render();
+    renderViews();
   },
   'toggle-page-markers': () => {
     settings.pageMarkers = !settings.pageMarkers;
@@ -1344,6 +1428,7 @@ const actions: Record<string, () => void> = {
   'rename-char': () => openRenameChar(),
   'view-script': () => setView('script'),
   'view-cards': () => setView('cards'),
+  'view-board': () => setView('board'),
   'zoom-in': () => setZoom(settings.zoom + 0.1),
   'zoom-out': () => setZoom(settings.zoom - 0.1),
   'zoom-reset': () => setZoom(1),
@@ -1404,6 +1489,19 @@ document.addEventListener('mousedown', (e) => {
 /* Global shortcuts                                                      */
 /* -------------------------------------------------------------------- */
 
+/* Hold Alt: the element buttons show their shortcut key instead of their icon. */
+const setAltHints = (on: boolean) => document.body.classList.toggle('alt-hints', on);
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Alt' && !e.ctrlKey && !e.metaKey && !e.shiftKey) setAltHints(true);
+  else if (!e.altKey || e.ctrlKey || e.metaKey) setAltHints(false);
+});
+document.addEventListener('keyup', (e) => {
+  if (e.key !== 'Alt') return;
+  setAltHints(false);
+  e.preventDefault(); // don't let the browser put focus on its own menu
+});
+window.addEventListener('blur', () => setAltHints(false));
+
 const KEY_TYPES = new Map(ELEMENTS.filter((e) => e.key).map((e) => [e.key!, e.type]));
 
 document.addEventListener('keydown', (e) => {
@@ -1445,11 +1543,11 @@ document.addEventListener('keydown', (e) => {
     actions['toggle-sidebar']();
     return;
   }
-  if (settings.view === 'cards' && !inField && (k === 'z' || k === 'y')) {
+  if (settings.view !== 'script' && !inField && (k === 'z' || k === 'y')) {
     e.preventDefault();
     if (k === 'y' || e.shiftKey) editor.redo();
     else editor.undo();
-    board.render();
+    renderViews();
     return;
   }
   if (k === 's') {
@@ -1530,6 +1628,8 @@ async function boot() {
     lastSavedAt = new Date(p.meta.updatedAt);
     renderSaveStatus();
     showStorageNotices(p.meta);
+    // Tidy up storyboard drawings nothing refers to any more (after the doc above is saved).
+    window.setTimeout(() => void persist().then(() => gcImages(projectId)).catch(() => {}), 4000);
   } catch (err) {
     console.error(err);
     saveFailed = true;

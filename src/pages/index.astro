@@ -7,6 +7,17 @@ import Logo from '../components/Logo.astro';
 import ThemeSwitch from '../components/ThemeSwitch.astro';
 import Loader from '../components/Loader.astro';
 import { en_ as T, type Key } from '../scripts/i18n';
+import fs from 'node:fs';
+import tauriConf from '../../src-tauri/tauri.conf.json';
+
+// Shown next to the download button: always the version and size of the installer being served.
+const APP_VERSION = tauriConf.version;
+let installerSize = '';
+try {
+  installerSize = `${(fs.statSync('public/downloads/TerraScript-Setup.exe').size / 1048576).toFixed(1)} MB`;
+} catch {
+  /* no installer in this checkout */
+}
 
 const icon = (paths: string) =>
   `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
@@ -155,7 +166,10 @@ const features: { t: Key; d: Key; b: Key; icon: string }[] = [
             </a>
             <button type="button" id="cta-sample" class="btn btn-lg" data-i18n="land.sample">{T('land.sample')}</button>
           </div>
-          <p class="land-dl-note" data-i18n="land.downloadNote">{T('land.downloadNote')}</p>
+          <p class="land-dl-note">
+            <span class="land-dl-ver">v{APP_VERSION}</span>
+            <span>{installerSize && `${installerSize} · `}<span data-i18n="land.downloadNote">{T('land.downloadNote')}</span></span>
+          </p>
         </div>
 
         <!-- 3D glass logo card: adapted from Uiverse.io by Smit-Prajapati, in Terra colours -->

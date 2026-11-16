@@ -1,6 +1,7 @@
 ---
 import '../styles/global.css';
 import '../styles/features.css';
+import '../styles/storyboard.css';
 import HeadBoot from '../components/HeadBoot.astro';
 import Logo from '../components/Logo.astro';
 import ThemeSwitch from '../components/ThemeSwitch.astro';
@@ -54,6 +55,7 @@ const menus: { id: string; key: Key; items: Item[] }[] = [
     items: [
       { key: 'm.viewScript', action: 'view-script', check: 'view=script' },
       { key: 'm.viewCards', action: 'view-cards', check: 'view=cards' },
+      { key: 'm.viewBoard', action: 'view-board', check: 'view=board' },
       'sep',
       { key: 'm.showTitle', action: 'toggle-title-sheet', check: 'titleSheet' },
       { key: 'm.sceneNumbers', action: 'toggle-scene-numbers', check: 'sceneNumbers' },
@@ -235,6 +237,8 @@ const hintKey = (type: string) => `hint.${type}` as Key;
             <label for="view-script"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M9 12h6M9 16h6"/></svg><span data-i18n="view.script">{T('view.script')}</span></label>
             <input type="radio" name="view" id="view-cards" value="cards" data-view="cards" />
             <label for="view-cards"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg><span data-i18n="view.cards">{T('view.cards')}</span></label>
+            <input type="radio" name="view" id="view-board" value="board" data-view="board" />
+            <label for="view-board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="8.5" height="6.5" rx="1"/><rect x="13" y="4" width="8.5" height="6.5" rx="1"/><path d="M2.5 14h8.5M2.5 17.5h6M13 14h8.5M13 17.5h6"/></svg><span data-i18n="view.board">{T('view.board')}</span></label>
             <div class="glider-container" aria-hidden="true"><div class="glider"></div></div>
           </div>
       </div>
@@ -262,14 +266,14 @@ const hintKey = (type: string) => `hint.${type}` as Key;
                 data-title-suffix={suffix}
                 aria-pressed="false"
               >
-                <span class="tool-icon" set:html={e.icon} />
+                <span class="tool-icon" data-key={e.key} set:html={e.icon} />
                 <span class="tool-label">{e.label}</span>
               </button>
             );
           })
         }
         <button type="button" class="tool" id="btn-dual" title={T('ui.dualTip')} data-i18n-title="ui.dualTip">
-          <span class="tool-icon" set:html={DUAL_ICON} />
+          <span class="tool-icon" data-key="D" set:html={DUAL_ICON} />
           <span class="tool-label">Dual</span>
         </button>
       </div>
@@ -310,6 +314,7 @@ const hintKey = (type: string) => `hint.${type}` as Key;
 
       <!-- Writing area -->
       <section id="board" class="board flex-1 overflow-auto" aria-label={T('view.cards')} data-i18n-aria="view.cards" hidden></section>
+      <section id="storyboard" class="storyboard flex-1 overflow-auto" aria-label={T('view.board')} data-i18n-aria="view.board" hidden></section>
       <main class="desk flex-1 overflow-auto">
         <section id="title-sheet" class="paper title-sheet" aria-label={T('sheet.label')} data-i18n-aria="sheet.label">
           <span class="sheet-label" data-i18n="sheet.label">{T('sheet.label')}</span>

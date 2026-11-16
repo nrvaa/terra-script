@@ -1,18 +1,28 @@
 /**
  * Project storage in IndexedDB (in this browser, on this computer).
- * Two stores: `projects` holds light metadata for the project list,
- * `scripts` holds the full documents.
+ * `projects` holds light metadata for the project list, `scripts` the full
+ * documents, `snapshots` the version history and `images` the storyboard
+ * drawings (kept out of the document so undo and snapshots stay light).
  */
 import { normalizeTitlePage, parseFountain } from './fountain';
 import { layoutScript } from './pdf';
 import {
+  BOARD_ASPECTS,
+  CAMERA_MOVES,
   CARD_COLORS,
   ELEMENTS,
   REV_COLORS,
+  SHOT_ANGLES,
+  SHOT_SIZES,
   TAG_CATS,
   TAKE_STATUSES,
   characterName,
+  type BoardAspect,
+  type CameraMove,
   type ElementStyle,
+  type Panel,
+  type ShotAngle,
+  type ShotSize,
   type RevColor,
   type Revision,
   type Run,
@@ -44,7 +54,7 @@ export interface ProjectMeta {
 }
 
 const DB_NAME = 'tewrite';
-const DB_VERSION = 2; // 2: snapshots store
+const DB_VERSION = 4; // 2: snapshots store, 3: storyboard images, 4: repair a v3 without the images store
 const LEGACY_KEY = 'tewrite:doc';
 const UNSAVED_PREFIX = 'tewrite:unsaved:';
 
@@ -54,25 +64,44 @@ function openDb(): Promise<IDBDatabase> {
   if (dbPromise) return dbPromise;
   dbPromise = new Promise((resolve, reject) => {
     if (!('indexedDB' in window)) return reject(new Error('IndexedDB unavailable'));
-    const req = indexedDB.open(DB_NAME, DB_VERSION);
-    req.onupgradeneeded = () => {
-      const db = req.result;
-      if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('scripts')) db.createObjectStore('scripts', { keyPath: 'id' });
-      if (!db.objectStoreNames.contains('snapshots')) {
-        db.createObjectStore('snapshots', { keyPath: 'id' }).createIndex('project', 'projectId');
-      }
-    };
-    req.onsuccess = () => {
-      // Let a newer version of the app (in another tab) upgrade the database.
-      req.result.onversionchange = () => {
-        req.result.close();
-        dbPromise = null;
+    let blockedTimer = 0;
+    const open = (version?: number) => {
+      const req = version ? indexedDB.open(DB_NAME, version) : indexedDB.open(DB_NAME);
+      req.onupgradeneeded = () => {
+        const db = req.result;
+        if (!db.objectStoreNames.contains('projects')) db.createObjectStore('projects', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('scripts')) db.createObjectStore('scripts', { keyPath: 'id' });
+        if (!db.objectStoreNames.contains('snapshots')) {
+          db.createObjectStore('snapshots', { keyPath: 'id' }).createIndex('project', 'projectId');
+        }
+        if (!db.objectStoreNames.contains('images')) {
+          db.createObjectStore('images', { keyPath: 'key' }).createIndex('project', 'projectId');
+        }
       };
-      resolve(req.result);
+      req.onsuccess = () => {
+        window.clearTimeout(blockedTimer);
+        // Let a newer version of the app (in another tab) upgrade the database.
+        req.result.onversionchange = () => {
+          req.result.close();
+          dbPromise = null;
+        };
+        resolve(req.result);
+      };
+      req.onerror = () => {
+        window.clearTimeout(blockedTimer);
+        // A newer version of the app already upgraded the database (e.g. an older
+        // desktop install opened after a newer one): open it as it is. Newer
+        // versions only ever add stores, so everything here keeps working.
+        if (version && req.error?.name === 'VersionError') return open();
+        reject(req.error);
+      };
+      // Another tab still holds the old version open. The upgrade continues as
+      // soon as it lets go; only give up if that takes too long.
+      req.onblocked = () => {
+        blockedTimer = window.setTimeout(() => reject(new Error('IndexedDB blocked')), 8000);
+      };
     };
-    req.onerror = () => reject(req.error);
-    req.onblocked = () => reject(new Error('IndexedDB blocked'));
+    open(DB_VERSION);
   });
   dbPromise.catch(() => (dbPromise = null));
   return dbPromise;
@@ -152,6 +181,8 @@ export async function loadProject(id: string): Promise<{ meta: ProjectMeta; doc:
 
 /** Save a document (creating the project if needed). */
 export async function saveProject(id: string, doc: ScriptDoc, opts: { touch?: boolean } = {}): Promise<ProjectMeta> {
+  // Drawings that came inside a .terra file go to the image store.
+  doc = await storeInlineImages(id, doc);
   const db = await openDb();
   const tx = db.transaction(['projects', 'scripts'], 'readwrite');
   const projects = tx.objectStore('projects');
@@ -182,12 +213,14 @@ export async function createProject(doc: ScriptDoc): Promise<string> {
 
 export async function deleteProject(id: string): Promise<void> {
   const db = await openDb();
-  const tx = db.transaction(['projects', 'scripts', 'snapshots'], 'readwrite');
+  const tx = db.transaction(['projects', 'scripts', 'snapshots', 'images'], 'readwrite');
   tx.objectStore('projects').delete(id);
   tx.objectStore('scripts').delete(id);
-  const snaps = tx.objectStore('snapshots');
-  const keys = await request(snaps.index('project').getAllKeys(id));
-  for (const k of keys) snaps.delete(k);
+  for (const name of ['snapshots', 'images']) {
+    const store = tx.objectStore(name);
+    const keys = await request(store.index('project').getAllKeys(id));
+    for (const k of keys) store.delete(k);
+  }
   await done(tx);
   try {
     localStorage.removeItem(UNSAVED_PREFIX + id);
@@ -208,7 +241,148 @@ export async function duplicateProject(id: string, makeTitle: (t: string) => str
   if (!p) return null;
   const doc: ScriptDoc = structuredClone(p.doc);
   doc.titlePage.title = makeTitle(doc.titlePage.title);
-  return createProject(doc);
+  const copy = await createProject(doc);
+  // The copy gets its own storyboard drawings.
+  const db = await openDb();
+  const read = db.transaction('images', 'readonly');
+  const rows = await request(read.objectStore('images').index('project').getAll(id) as IDBRequest<ImageRow[]>);
+  if (rows.length) {
+    const tx = db.transaction('images', 'readwrite');
+    for (const r of rows) tx.objectStore('images').put({ ...r, key: imageKey(copy, r.id), projectId: copy });
+    await done(tx);
+  }
+  return copy;
+}
+
+/* ------------------------------------------------------------------ */
+/* Storyboard images                                                   */
+/* ------------------------------------------------------------------ */
+
+/* A drawing never changes once stored: editing a panel saves a new image with
+   a new id. Undo, snapshots and other projects can therefore point at old ids
+   safely; images nobody refers to any more are removed by gcImages().
+   The bytes are stored as a plain ArrayBuffer, not a Blob: Safari (every
+   browser on iPhone and iPad) can fail to store or read back Blobs in
+   IndexedDB, while ArrayBuffers work everywhere. */
+
+interface ImageRow {
+  key: string;
+  projectId: string;
+  id: string;
+  data: ArrayBuffer;
+  type: string;
+  at: number;
+  /** Rows written by the first storyboard version. */
+  blob?: Blob;
+}
+
+const imageKey = (projectId: string, id: string) => `${projectId}/${id}`;
+const IMAGE_ID = /^[a-z0-9]{1,40}$/i;
+const IMAGE_URL = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
+/** Keep unreferenced images this long, in case another tab is still using them. */
+const IMAGE_GRACE = 60 * 60 * 1000;
+
+export async function putImage(projectId: string, id: string, blob: Blob): Promise<void> {
+  // Read the bytes before opening the transaction (it would close while we wait).
+  const data = await blob.arrayBuffer();
+  const db = await openDb();
+  const tx = db.transaction('images', 'readwrite');
+  const row: ImageRow = { key: imageKey(projectId, id), projectId, id, data, type: blob.type || 'image/png', at: Date.now() };
+  tx.objectStore('images').put(row);
+  await done(tx);
+}
+
+export async function getImage(projectId: string, id: string): Promise<Blob | undefined> {
+  const db = await openDb();
+  const tx = db.transaction('images', 'readonly');
+  const row = await request(tx.objectStore('images').get(imageKey(projectId, id)) as IDBRequest<ImageRow | undefined>);
+  if (!row) return undefined;
+  return row.data ? new Blob([row.data], { type: row.type }) : row.blob;
+}
+
+/** Ids of every drawing the blocks use, omitted scenes included. */
+export function imageIds(blocks: Block[], into = new Set<string>()): Set<string> {
+  for (const b of blocks) {
+    for (const p of b.board ?? []) if (p.img) into.add(p.img);
+    if (b.omit) imageIds(b.omit, into);
+  }
+  return into;
+}
+
+function dataUrlBytes(url: string): { data: ArrayBuffer; type: string } {
+  const comma = url.indexOf(',');
+  const type = url.slice(5, url.indexOf(';'));
+  const bin = atob(url.slice(comma + 1));
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return { data: bytes.buffer, type };
+}
+
+const blobToDataUrl = (blob: Blob) =>
+  new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(r.result as string);
+    r.onerror = () => reject(r.error);
+    r.readAsDataURL(blob);
+  });
+
+async function storeInlineImages(projectId: string, doc: ScriptDoc): Promise<ScriptDoc> {
+  if (!doc.images) return doc;
+  const { images, ...rest } = doc;
+  const entries = Object.entries(images).filter(([id, url]) => IMAGE_ID.test(id) && IMAGE_URL.test(url));
+  if (entries.length) {
+    const db = await openDb();
+    const tx = db.transaction('images', 'readwrite');
+    const now = Date.now();
+    for (const [id, url] of entries) {
+      const row: ImageRow = { key: imageKey(projectId, id), projectId, id, ...dataUrlBytes(url), at: now };
+      tx.objectStore('images').put(row);
+    }
+    await done(tx);
+  }
+  return rest;
+}
+
+/** Remove drawings that neither the project, its snapshots nor an unsaved copy use. */
+export async function gcImages(projectId: string): Promise<void> {
+  const db = await openDb();
+  const read = db.transaction(['scripts', 'snapshots'], 'readonly');
+  const [row, snaps] = await Promise.all([
+    request(read.objectStore('scripts').get(projectId) as IDBRequest<{ id: string; doc: ScriptDoc } | undefined>),
+    request(read.objectStore('snapshots').index('project').getAll(projectId) as IDBRequest<Snapshot[]>),
+  ]);
+  if (!row) return;
+  const keep = imageIds(row.doc.blocks);
+  for (const s of snaps) imageIds(s.doc.blocks, keep);
+  try {
+    const raw = localStorage.getItem(UNSAVED_PREFIX + projectId);
+    if (raw) imageIds((JSON.parse(raw) as { doc?: ScriptDoc }).doc?.blocks ?? [], keep);
+  } catch {
+    /* ignore */
+  }
+  const tx = db.transaction('images', 'readwrite');
+  const store = tx.objectStore('images');
+  const keys = await request(store.index('project').getAllKeys(projectId));
+  const old = Date.now() - IMAGE_GRACE;
+  for (const key of keys) {
+    const id = String(key).slice(projectId.length + 1);
+    if (keep.has(id)) continue;
+    const r = await request(store.get(key) as IDBRequest<ImageRow | undefined>);
+    if (r && r.at < old) store.delete(key);
+  }
+  await done(tx);
+}
+
+/** The project as a .terra file, with its storyboard drawings inside. */
+export async function serializeProject(projectId: string | null, doc: ScriptDoc): Promise<string> {
+  const ids = imageIds(doc.blocks);
+  if (!projectId || !ids.size) return serializeTerra(doc);
+  const images: Record<string, string> = {};
+  for (const id of ids) {
+    const blob = await getImage(projectId, id);
+    if (blob) images[id] = await blobToDataUrl(blob);
+  }
+  return serializeTerra({ ...doc, images });
 }
 
 /* ------------------------------------------------------------------ */
@@ -301,6 +475,8 @@ export function serializeTerra(doc: ScriptDoc): string {
       ...(doc.revision ? { revision: doc.revision } : {}),
       ...(doc.tags?.length ? { tags: doc.tags } : {}),
       blocks: doc.blocks,
+      // Storyboard drawings last, so the script stays readable at the top of the file.
+      ...(doc.images && Object.keys(doc.images).length ? { images: doc.images } : {}),
     },
     null,
     2,
@@ -342,6 +518,13 @@ export function parseTerra(text: string): ScriptDoc {
       .filter((x) => x.text);
     if (tags.length) doc.tags = tags;
   }
+  if (raw.images && typeof raw.images === 'object') {
+    const images: Record<string, string> = {};
+    for (const [id, url] of Object.entries(raw.images as Record<string, unknown>)) {
+      if (IMAGE_ID.test(id) && typeof url === 'string' && url.length < 16_000_000 && IMAGE_URL.test(url)) images[id] = url;
+    }
+    if (Object.keys(images).length) doc.images = images;
+  }
   return doc;
 }
 
@@ -361,6 +544,7 @@ function parseLayout(l: Record<string, unknown>): ScriptLayout {
   if (header) layout.header = header;
   if (footer) layout.footer = footer;
   for (const k of ['moreText', 'contdText', 'watermark'] as const) if (typeof l[k] === 'string') layout[k] = str(l[k], 60);
+  if (BOARD_ASPECTS.includes(l.boardAspect as BoardAspect)) layout.boardAspect = l.boardAspect as BoardAspect;
   if (l.styles && typeof l.styles === 'object') {
     const styles: ScriptLayout['styles'] = {};
     for (const [type, v] of Object.entries(l.styles as Record<string, Record<string, unknown>>)) {
@@ -423,6 +607,24 @@ function parseBlocks(items: unknown[], depth: number): Block[] {
             at: typeof x.at === 'number' && Number.isFinite(x.at) ? x.at : 0,
           }));
         if (takes.length) block.takes = takes;
+      }
+      if (Array.isArray(b.board)) {
+        const board: Panel[] = (b.board as Record<string, unknown>[])
+          .filter((x) => x && typeof x === 'object')
+          .slice(0, 500)
+          .map((x) => {
+            const p: Panel = { id: (IMAGE_ID.test(str(x.id)) && str(x.id)) || newId() };
+            if (typeof x.img === 'string' && IMAGE_ID.test(x.img)) p.img = x.img;
+            if (SHOT_SIZES.includes(x.shot as ShotSize)) p.shot = x.shot as ShotSize;
+            if (SHOT_ANGLES.includes(x.angle as ShotAngle)) p.angle = x.angle as ShotAngle;
+            if (CAMERA_MOVES.includes(x.move as CameraMove)) p.move = x.move as CameraMove;
+            const dur = str(x.dur, 20).trim();
+            if (dur) p.dur = dur;
+            const note = str(x.note, 2000);
+            if (note.trim()) p.note = note;
+            return p;
+          });
+        if (board.length) block.board = board;
       }
     }
     blocks.push(block);

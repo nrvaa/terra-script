@@ -246,8 +246,27 @@ kbd {
   transition: color 0.3s ease-in-out;
 }
 .tool-label { white-space: nowrap; font-size: 10.5px; line-height: 12px; }
-.tool-icon { display: grid; }
-.tool-icon svg { width: 17px; height: 17px; transition: transform 0.3s ease; }
+.tool-icon { display: grid; place-items: center; }
+.tool-icon svg { width: 17px; height: 17px; transition: transform 0.3s ease, opacity 0.12s ease; }
+/* Holding Alt: every icon turns into the key that picks it (Alt+1 … Alt+0, Alt+D). */
+.tool-icon > svg, .tool-icon[data-key]::after { grid-area: 1 / 1; }
+.tool-icon[data-key]::after {
+  content: attr(data-key);
+  display: grid;
+  place-items: center;
+  min-width: 17px;
+  height: 17px;
+  padding: 0 3px;
+  border: 1px solid currentColor;
+  border-bottom-width: 2px;
+  border-radius: 4px;
+  font: 700 11px/1 ui-monospace, 'Courier Prime', monospace;
+  opacity: 0;
+  transform: scale(0.6);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.alt-hints .tool-icon[data-key] svg { opacity: 0; transform: scale(0.6); }
+.alt-hints .tool-icon[data-key]::after { opacity: 1; transform: none; }
 .tool:hover { color: var(--text); }
 .tool:hover .tool-icon svg { transform: translateY(-1px); }
 .tool.active { color: var(--main-color); font-weight: 600; }
@@ -1823,7 +1842,15 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; }
 }
 .land-ctas { display: flex; flex-wrap: wrap; gap: 10px; margin: 28px 0 0 1.8rem; }
 .land-ctas .btn-primary svg { margin-right: 8px; flex: none; }
-.land-dl-note { margin: 12px 0 0 1.8rem; font-size: 12.5px; color: var(--muted); }
+.land-dl-note { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; margin: 12px 0 0 1.8rem; font-size: 12.5px; color: var(--muted); }
+.land-dl-ver {
+  padding: 1px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 700 11.5px/1.6 'Courier Prime', 'Courier New', monospace;
+}
 /* Phones and tablets can't run the Windows installer. */
 @media (max-width: 640px), (hover: none) and (pointer: coarse) {
   #cta-download, .land-dl-note { display: none; }

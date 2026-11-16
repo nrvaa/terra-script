@@ -12,6 +12,7 @@ The interface is available in English and Indonesian.
 - **Smart dropdowns.** INT./EXT., locations, times of day and every character you have already written are one keystroke away.
 - **Index cards.** Every scene becomes a card with a synopsis and a colour. Drag the cards to restructure the story and the script follows.
 - **Take log.** Log slate, take, camera and roll for each scene, and rate every take Good, Maybe or Skip.
+- **Storyboard.** Every scene gets a row of panels. Draw each shot with pencil, brush, marker and arrows (stylus pressure supported), or drop in a photo, then add shot size, angle, camera movement, duration and a note. Export the storyboard as a PDF.
 - **Export.** PDF, [Fountain](https://fountain.io) and plain text, plus reports with statistics and a per-character breakdown.
 - **Works offline.** Projects are stored locally. A `.terra` file opens the same way on any other device.
 

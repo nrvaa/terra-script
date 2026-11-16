@@ -12,12 +12,13 @@ import {
   type Block,
   type CardColor,
   type ElType,
+  type Panel,
   type Run,
   type Take,
 } from './types';
 
 /** Block properties stored as data attributes on the element. */
-type Props = Partial<Pick<Block, 'text' | 'synopsis' | 'color' | 'takes' | 'mark' | 'omit' | 'num' | 'newPage' | 'pg' | 'pgLine' | 'fmt'>>;
+type Props = Partial<Pick<Block, 'text' | 'synopsis' | 'color' | 'takes' | 'board' | 'mark' | 'omit' | 'num' | 'newPage' | 'pg' | 'pgLine' | 'fmt'>>;
 
 interface Caret {
   b: number;
@@ -182,6 +183,13 @@ export class ScreenplayEditor {
             /* ignore corrupt data */
           }
         }
+        if (el.dataset.board) {
+          try {
+            b.board = JSON.parse(el.dataset.board) as Panel[];
+          } catch {
+            /* ignore corrupt data */
+          }
+        }
       }
       return b;
     });
@@ -243,7 +251,7 @@ export class ScreenplayEditor {
       el.dataset.type = type;
       if (type !== 'character') delete el.dataset.dual;
       if (type !== 'scene') {
-        for (const k of ['synopsis', 'color', 'takes', 'omit', 'lnum', 'newPage']) delete el.dataset[k];
+        for (const k of ['synopsis', 'color', 'takes', 'board', 'omit', 'lnum', 'newPage']) delete el.dataset[k];
       }
       this.setText(el, text, fmt);
     }
@@ -346,6 +354,7 @@ export class ScreenplayEditor {
     if ('synopsis' in patch) set('synopsis', patch.synopsis);
     if ('color' in patch) set('color', patch.color);
     if ('takes' in patch) set('takes', patch.takes?.length ? JSON.stringify(patch.takes) : undefined);
+    if ('board' in patch) set('board', patch.board?.length ? JSON.stringify(patch.board) : undefined);
     if ('mark' in patch) set('mark', patch.mark ? '1' : undefined);
     if ('omit' in patch) set('omit', patch.omit?.length ? JSON.stringify(patch.omit) : undefined);
     if ('num' in patch) set('lnum', patch.num);
@@ -447,6 +456,7 @@ export class ScreenplayEditor {
       if (b.synopsis) d.dataset.synopsis = b.synopsis;
       if (b.color) d.dataset.color = b.color;
       if (b.takes?.length) d.dataset.takes = JSON.stringify(b.takes);
+      if (b.board?.length) d.dataset.board = JSON.stringify(b.board);
       if (b.omit?.length) d.dataset.omit = JSON.stringify(b.omit);
       if (b.num) d.dataset.lnum = b.num;
       if (b.newPage) d.dataset.newPage = '1';

@@ -24,6 +24,8 @@ export interface Block {
   color?: CardColor;
   /** Only on `scene`: production take log. */
   takes?: Take[];
+  /** Only on `scene`: storyboard panels (shots), in order. */
+  board?: Panel[];
   /** Inline formatting runs: [start, end, flags] with flags from 'bius'. */
   fmt?: Run[];
   /** Manually marked as revised (Revisions → Mark change). */
@@ -180,7 +182,7 @@ export interface ScriptLayout {
   more?: boolean;
   moreText?: string;
   contdText?: string;
-  /** Add (CONT'D) when a character speaks again after an interruption in the same scene. */
+  /** Add (CONT'D) when a character speaks again after an interruption in the same scene (on unless false). */
   autoContd?: boolean;
   /** CONTINUED: / (CONTINUED) when a scene runs over a page break. */
   sceneContinueds?: boolean;
@@ -188,6 +190,55 @@ export interface ScriptLayout {
   /** Asterisks in the right margin and a revision label on revised pages. */
   revMarks?: boolean;
   styles?: Partial<Record<ElType, Partial<ElementStyle>>>;
+  /** Storyboard frame shape. */
+  boardAspect?: BoardAspect;
+}
+
+/* Storyboard ---------------------------------------------------------- */
+
+/** Shot sizes, as written on storyboards (the abbreviations are the same in every language). */
+export const SHOT_SIZES = ['ews', 'ws', 'fs', 'ms', 'mcu', 'cu', 'ecu', 'ots', 'pov', 'ins'] as const;
+export type ShotSize = (typeof SHOT_SIZES)[number];
+export const SHOT_ABBR: Record<ShotSize, string> = {
+  ews: 'EWS',
+  ws: 'WS',
+  fs: 'FS',
+  ms: 'MS',
+  mcu: 'MCU',
+  cu: 'CU',
+  ecu: 'ECU',
+  ots: 'OTS',
+  pov: 'POV',
+  ins: 'INSERT',
+};
+export const SHOT_ANGLES = ['eye', 'high', 'low', 'top', 'dutch'] as const;
+export type ShotAngle = (typeof SHOT_ANGLES)[number];
+export const CAMERA_MOVES = ['static', 'pan', 'tilt', 'dolly', 'truck', 'zoom', 'crane', 'handheld'] as const;
+export type CameraMove = (typeof CAMERA_MOVES)[number];
+
+export const BOARD_ASPECTS = ['16:9', '1.85', '2.39', '4:3', '1:1', '9:16'] as const;
+export type BoardAspect = (typeof BOARD_ASPECTS)[number];
+/** Width / height of each frame shape. */
+export const ASPECT_RATIO: Record<BoardAspect, number> = {
+  '16:9': 16 / 9,
+  '1.85': 1.85,
+  '2.39': 2.39,
+  '4:3': 4 / 3,
+  '1:1': 1,
+  '9:16': 9 / 16,
+};
+
+/** One storyboard panel. The drawing is stored separately (see projects.ts), by `img` id. */
+export interface Panel {
+  id: string;
+  img?: string;
+  shot?: ShotSize;
+  angle?: ShotAngle;
+  move?: CameraMove;
+  /** Free text, e.g. "3s". */
+  dur?: string;
+  /** What happens in the shot: action, dialogue, sound. */
+  note?: string;
 }
 
 export const DEFAULT_HEADER: [string, string, string] = ['', '', '{page}.'];
@@ -209,6 +260,11 @@ export interface ScriptDoc {
   layout?: ScriptLayout;
   revision?: Revision;
   tags?: Tag[];
+  /**
+   * Storyboard drawings as data URLs, by id. Only present while a project
+   * travels in a .terra file; in the app they live in their own store.
+   */
+  images?: Record<string, string>;
 }
 
 /** 0 → A, 25 → Z, 26 → AA. */

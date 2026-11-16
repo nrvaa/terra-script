@@ -226,7 +226,7 @@ export function initFeatures(ctx: AppCtx) {
     const els = editorEl.children;
     const l = ctx.layout();
     const labels = sceneLabels(blocks, l);
-    const contd = l.autoContd ? autoContdCues(blocks) : new Set<number>();
+    const contd = l.autoContd !== false ? autoContdCues(blocks) : new Set<number>();
     const word = `(${(l.contdText || "CONT'D").trim()})`;
     const showRev = settings.showRevisions;
     const rs = showRev ? revisionState(blocks) : null;
@@ -369,7 +369,7 @@ export function initFeatures(ctx: AppCtx) {
     firstPageHeader: { get: () => Boolean(ctx.layout().firstPageHeader), set: (v: boolean) => setLayout({ firstPageHeader: v }) },
     paper: { get: () => settings.paper, set: (v: 'letter') => setLayout({ paper: v }) },
     more: { get: () => ctx.layout().more !== false, set: (v: boolean) => setLayout({ more: v }) },
-    autoContd: { get: () => Boolean(ctx.layout().autoContd), set: (v: boolean) => setLayout({ autoContd: v }) },
+    autoContd: { get: () => ctx.layout().autoContd !== false, set: (v: boolean) => setLayout({ autoContd: v }) },
     sceneContinueds: { get: () => Boolean(ctx.layout().sceneContinueds), set: (v: boolean) => setLayout({ sceneContinueds: v }) },
     lang: { get: () => settings.lang, set: (v: Lang) => ctx.applyLanguage(v) },
     docLang: { get: () => settings.docLang, set: (v: string) => ((settings.docLang = v), ctx.applySettings()) },
@@ -618,7 +618,7 @@ export function initFeatures(ctx: AppCtx) {
           <label><span>${esc(t('mc.moreWord'))}</span><input class="text-input" name="moreText" value="${esc(l.moreText ?? 'MORE')}" maxlength="20" /></label>
           <label><span>${esc(t('mc.contdWord'))}</span><input class="text-input" name="contdText" value="${esc(l.contdText ?? "CONT'D")}" maxlength="20" /></label>
         </div>
-        ${toggle('autoContd', t('mc.autoContd'), t('mc.autoContdDesc'), Boolean(l.autoContd))}
+        ${toggle('autoContd', t('mc.autoContd'), t('mc.autoContdDesc'), l.autoContd !== false)}
         ${toggle('sceneContinueds', t('mc.sceneContinueds'), t('mc.sceneContinuedsDesc'), Boolean(l.sceneContinueds))}
         <div class="flex justify-end gap-2 pt-3">
           <button type="button" class="btn" data-close>${esc(t('proj.cancel'))}</button>
