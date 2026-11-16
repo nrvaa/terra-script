@@ -810,7 +810,7 @@ kbd {
 }
 .panel-reveal[hidden] { display: none; }
 .panel-reveal:hover { color: var(--accent); border-color: var(--accent); }
-@media (max-width: 900px) { .panel-reveal, .panel-hide { display: none !important; } }
+/* Narrow screens (tablet portrait, phone): the panel becomes a drawer — see Responsive. */
 
 /* Page view: the script as separate sheets, exactly like the PDF */
 #paper.paged {
@@ -1586,10 +1586,70 @@ fieldset:disabled .ex-checks { opacity: 0.5; }
 /* ------------------------------------------------------------------ */
 /* Responsive                                                          */
 /* ------------------------------------------------------------------ */
+/* Tablet: menus and element toolbar scroll sideways; a fade at the edge
+   shows there is more. Tools get a little tighter so most fit. */
+@media (max-width: 1100px) {
+  .menubar, .toolbar-inner {
+    -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+    mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent);
+    padding-right: 28px;
+    scrollbar-width: none;
+  }
+  .menubar::-webkit-scrollbar, .toolbar-inner::-webkit-scrollbar { display: none; }
+  .tool { min-width: 48px; padding: 6px 5px 7px; }
+  .tool-label { font-size: 10px; }
+  .toolbar-inner > .tool-sep { margin: 0 2px; }
+  .menu-btn { padding: 6px 9px; }
+}
+/* Tablet portrait and phone: the side panel slides in as a drawer, opened
+   from a floating button (app.ts toggles body.drawer-open). */
+.drawer-scrim { display: none; }
 @media (max-width: 900px) {
   .sidebar { display: none; }
+  .panel-reveal {
+    display: grid;
+    position: fixed;
+    top: auto;
+    left: 14px;
+    bottom: 44px;
+    z-index: 30;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    box-shadow: 0 6px 20px rgb(16 24 40 / 0.18);
+  }
+  .panel-reveal svg { width: 20px; height: 20px; }
+  .panel-hide { width: 36px; height: 36px; }
+  body.drawer-open .sidebar {
+    display: flex !important;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 46;
+    width: min(320px, 86vw);
+    box-shadow: 0 0 40px rgb(0 0 0 / 0.25);
+    animation: drawer-in 0.25s var(--expo-out, ease-out);
+  }
+  body.drawer-open .drawer-scrim { display: block; position: fixed; inset: 0; z-index: 45; background: rgb(10 8 20 / 0.35); }
+  body.drawer-open .panel-reveal { display: none; }
+  .tabs button[role="tab"] { padding: 8px 6px; }
+  .nav-scene { padding-top: 10px; padding-bottom: 10px; }
 }
+@keyframes drawer-in { from { transform: translateX(-100%); } to { transform: none; } }
+@media (prefers-reduced-motion: reduce) { body.drawer-open .sidebar { animation: none; } }
 @media (max-width: 720px) {
+  .statusbar {
+    gap: 14px;
+    overflow-x: auto;
+    white-space: nowrap;
+    scrollbar-width: none;
+  }
+  .statusbar::-webkit-scrollbar { display: none; }
+  .statusbar > * { flex-shrink: 0; }
+  .toolbar { gap: 8px; padding: 0 8px; }
+  .type-select { flex: 1; min-width: 0; }
+  .fmt-group { border-left: 0; padding-left: 0; }
   .toolbar-inner { display: none; }
   .type-select {
     display: block;
@@ -1692,6 +1752,10 @@ fieldset:disabled .ex-checks { opacity: 0.5; }
 /* Landing page                                                        */
 /* ------------------------------------------------------------------ */
 .landing { overflow-x: hidden; }
+/* The tilted ribbon and card bleed past the edges: clip them without making a scroll box. */
+.landing > main { overflow-x: clip; }
+@media (max-width: 640px) { .land-header a.btn { display: none; } .land-header .field-select { max-width: 9.5rem; } }
+@media (max-width: 560px) { .land-ctas .btn { flex: 1 1 100%; } }
 .land-wrap { max-width: 72rem; margin: 0 auto; padding-left: 16px; padding-right: 16px; }
 .land-header { position: sticky; top: 0; z-index: 10; background: color-mix(in srgb, var(--bg) 85%, transparent); backdrop-filter: blur(8px); border-bottom: 1px solid var(--border); }
 .btn-lg { padding: 13px 26px; font-size: 14px; border-radius: 10px; }
@@ -2228,11 +2292,11 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; }
 .fstack-btn:not(:disabled):hover { transform: scale(1.06); border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
 .fstack-btn:disabled { opacity: 0.45; cursor: not-allowed; }
 .fstack-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-@media (max-width: 760px) {
+@media (max-width: 900px) {
   .fstack { grid-template-columns: 1fr; grid-template-rows: auto auto auto auto; column-gap: 0; padding-inline: 28px; }
   .fstack-count { grid-column: 1; grid-row: 1; }
   .fstack-cards { grid-column: 1; grid-row: 2; max-width: 360px; justify-self: center; }
-  .fstack-text { grid-column: 1; grid-row: 3; margin-top: 28px; text-align: center; align-items: center; }
+  .fstack-text { grid-column: 1; grid-row: 3; margin-top: 28px; text-align: center; align-items: center; justify-self: center; max-width: 34rem; }
   .fstack-nav { grid-column: 1; grid-row: 4; justify-content: center; margin-top: 8px; }
 }
 

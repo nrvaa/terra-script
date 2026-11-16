@@ -269,6 +269,7 @@ const ctx: AppCtx = {
   sceneAt: (i) => sceneAt(i),
   setSidebarTab: (tab) => setSidebarTab(tab as Settings['sidebarTab']),
   showSidebar() {
+    if (isNarrow()) setDrawer(true);
     if (!settings.sidebar) {
       settings.sidebar = true;
       applySettings();
@@ -499,6 +500,23 @@ for (const id of ['#btn-hide-sidebar', '#btn-show-sidebar']) {
   $(id).addEventListener('mousedown', (e) => e.preventDefault());
   $(id).addEventListener('click', () => actions['toggle-sidebar']());
 }
+
+/* On tablet portrait and phones the side panel is a drawer over the page.
+   It doesn't touch settings.sidebar, which stays the desktop preference. */
+const narrowMq = window.matchMedia('(max-width: 900px)');
+const isNarrow = () => narrowMq.matches;
+function setDrawer(open: boolean) {
+  document.body.classList.toggle('drawer-open', open);
+  $('#btn-show-sidebar').setAttribute('aria-expanded', String(open));
+}
+$('#drawer-scrim').addEventListener('click', () => setDrawer(false));
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && document.body.classList.contains('drawer-open')) setDrawer(false);
+});
+narrowMq.addEventListener('change', () => {
+  setDrawer(false);
+  $('#btn-show-sidebar').hidden = settings.sidebar && !isNarrow();
+});
 $('#btn-takes').addEventListener('click', toggleTakes);
 
 function setView(view: Settings['view']) {
@@ -643,6 +661,7 @@ for (const list of ['#scene-list']) {
   $(list).addEventListener('click', (e) => {
     const btn = (e.target as HTMLElement).closest<HTMLElement>('[data-block]');
     if (!btn) return;
+    if (isNarrow()) setDrawer(false);
     if (settings.view === 'cards') board.focusScene(Number(btn.dataset.block));
     else editor.focus(Number(btn.dataset.block));
   });
@@ -736,7 +755,8 @@ function applySettings() {
   paper.classList.toggle('paper-a4', settings.paper === 'a4');
   applyZoom();
   $('#sidebar').hidden = !settings.sidebar;
-  $('#btn-show-sidebar').hidden = settings.sidebar;
+  // On narrow screens the button always shows: it opens the drawer.
+  $('#btn-show-sidebar').hidden = settings.sidebar && !window.matchMedia('(max-width: 900px)').matches;
   $('#title-sheet').hidden = !settings.titleSheet;
   $('#btn-title').setAttribute('aria-pressed', String(settings.titleSheet));
   $('#st-zoom').textContent = `${Math.round(settings.zoom * 100)}%`;
@@ -801,7 +821,9 @@ function cyclePaperColor() {
 }
 $('#btn-paper').addEventListener('click', cyclePaperColor);
 
-/** User zoom, reduced further if needed so the page fits narrow screens. */
+/** Zoom relative to the page width that fits: on wide screens that is the
+ *  real size; on tablets and phones 100% fits the width and zooming in
+ *  scrolls sideways instead of being capped. */
 function applyZoom() {
   const paperPx = (settings.paper === 'a4' ? 8.27 : 8.5) * 96;
   const desk = paper.parentElement;
@@ -809,7 +831,7 @@ function applyZoom() {
   const pad = cs ? parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight) : 16;
   const room = (desk?.clientWidth ?? window.innerWidth) - pad - 2;
   const fit = Math.min(1, room / paperPx);
-  const z = String(Math.min(settings.zoom, fit));
+  const z = String(fit * settings.zoom);
   paper.style.setProperty('zoom', z);
   $('#title-sheet').style.setProperty('zoom', z);
   $('#title-sheet').classList.toggle('paper-a4', settings.paper === 'a4');
@@ -1316,6 +1338,7 @@ const actions: Record<string, () => void> = {
     applySettings();
   },
   'toggle-sidebar': () => {
+    if (isNarrow()) return setDrawer(!document.body.classList.contains('drawer-open'));
     settings.sidebar = !settings.sidebar;
     applySettings();
     applyZoom();
@@ -1351,6 +1374,7 @@ const actions: Record<string, () => void> = {
 for (const el of ELEMENTS) actions[`type-${el.type}`] = () => editor.setType(el.type);
 
 function showReport(tab: Settings['sidebarTab']) {
+  if (isNarrow()) setDrawer(true);
   settings.sidebar = true;
   applySettings();
   setSidebarTab(tab);
