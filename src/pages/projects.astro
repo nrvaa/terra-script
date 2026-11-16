@@ -1,0 +1,104 @@
+---
+import '../styles/global.css';
+import HeadBoot from '../components/HeadBoot.astro';
+import Logo from '../components/Logo.astro';
+import ThemeSwitch from '../components/ThemeSwitch.astro';
+import Loader from '../components/Loader.astro';
+import { en_ as T } from '../scripts/i18n';
+
+const PLUS = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>';
+const UPLOAD =
+  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 15V3"/><path d="m7 8 5-5 5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>';
+---
+
+<html lang="en">
+  <head>
+    <HeadBoot title={T('proj.pageTitle')} />
+  </head>
+  <body class="app projects-page min-h-screen">
+    <Loader label={T('ui.loading')} />
+    <header class="topbar sticky top-0 z-10">
+      <div class="flex items-center gap-3 px-4 h-14 max-w-6xl mx-auto">
+        <a href="/" class="home-link">
+          <Logo id="hdr" class="brand-logo brand-logo-lg" />
+        </a>
+        <div class="ml-auto flex items-center gap-2">
+          <label class="sr-only" for="lang-select" data-i18n="proj.language">{T('proj.language')}</label>
+          <select id="lang-select" class="field-select">
+            <option value="en">English</option>
+            <option value="id">Bahasa Indonesia</option>
+          </select>
+          <ThemeSwitch label={T('proj.theme')} />
+        </div>
+      </div>
+    </header>
+
+    <main class="proj-wrap">
+      <div class="proj-head">
+        <div class="min-w-0">
+          <h1 class="proj-h1" data-i18n="proj.title">{T('proj.title')}</h1>
+          <p class="text-muted mt-1" data-i18n="proj.subtitle">{T('proj.subtitle')}</p>
+        </div>
+        <div class="flex gap-2 shrink-0">
+          <button type="button" id="btn-import" class="btn btn-icon"><span set:html={UPLOAD} /><span data-i18n="proj.import">{T('proj.import')}</span></button>
+          <button type="button" id="btn-new" class="btn btn-primary btn-icon"><span set:html={PLUS} /><span data-i18n="proj.new">{T('proj.new')}</span></button>
+        </div>
+      </div>
+
+      <div id="proj-error" class="proj-error" role="alert" hidden data-i18n="proj.storageError">{T('proj.storageError')}</div>
+
+      <div id="proj-tools" class="proj-tools" hidden>
+        <div class="search">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="proj-search" type="search" placeholder={T('proj.search')} aria-label={T('proj.search')} data-i18n-placeholder="proj.search" data-i18n-aria="proj.search" autocomplete="off" />
+          <kbd>/</kbd>
+        </div>
+        <span id="proj-count" class="text-muted text-sm ml-auto"></span>
+        <select id="proj-sort" class="field-select" aria-label={T('proj.sort')} data-i18n-aria="proj.sort">
+          <option value="recent" data-i18n="proj.sortRecent">{T('proj.sortRecent')}</option>
+          <option value="created" data-i18n="proj.sortCreated">{T('proj.sortCreated')}</option>
+          <option value="title" data-i18n="proj.sortTitle">{T('proj.sortTitle')}</option>
+        </select>
+      </div>
+
+      <ul id="proj-grid" class="proj-grid" aria-live="polite"></ul>
+
+      <section id="proj-empty" class="proj-empty" hidden>
+        <div class="proj-empty-art" aria-hidden="true"><Logo id="empty" variant="mark" /></div>
+        <h2 class="text-xl font-semibold" data-i18n="proj.empty">{T('proj.empty')}</h2>
+        <p class="text-muted max-w-md" data-i18n="proj.emptyHint">{T('proj.emptyHint')}</p>
+        <div class="flex flex-wrap justify-center gap-2 mt-2">
+          <button type="button" id="btn-empty-new" class="btn btn-primary btn-icon"><span set:html={PLUS} /><span data-i18n="proj.new">{T('proj.new')}</span></button>
+          <button type="button" id="btn-empty-import" class="btn btn-icon"><span set:html={UPLOAD} /><span data-i18n="proj.import">{T('proj.import')}</span></button>
+          <button type="button" id="btn-empty-sample" class="btn" data-i18n="proj.sample">{T('proj.sample')}</button>
+        </div>
+      </section>
+    </main>
+
+    <div id="card-menu" class="card-menu" role="menu" hidden>
+      <button type="button" class="menu-item" role="menuitem" data-card-action="rename"><span data-i18n="proj.rename">{T('proj.rename')}</span></button>
+      <button type="button" class="menu-item" role="menuitem" data-card-action="duplicate"><span data-i18n="proj.duplicate">{T('proj.duplicate')}</span></button>
+      <button type="button" class="menu-item" role="menuitem" data-card-action="download"><span data-i18n="proj.download">{T('proj.download')}</span></button>
+      <div class="menu-sep" role="separator"></div>
+      <button type="button" class="menu-item menu-danger" role="menuitem" data-card-action="delete"><span data-i18n="proj.delete">{T('proj.delete')}</span></button>
+    </div>
+
+    <dialog id="dlg-rename" class="dialog">
+      <form id="form-rename" method="dialog" class="grid gap-3">
+        <h2 class="text-lg font-semibold" data-i18n="proj.renameTitle">{T('proj.renameTitle')}</h2>
+        <input id="rename-input" class="text-input" autocomplete="off" spellcheck="false" aria-label={T('proj.renameTitle')} data-i18n-aria="proj.renameTitle" />
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn" data-close data-i18n="proj.cancel">{T('proj.cancel')}</button>
+          <button class="btn btn-primary" value="save"><span data-i18n="proj.save">{T('proj.save')}</span></button>
+        </div>
+      </form>
+    </dialog>
+
+    <input id="file-input" type="file" accept=".terra,.tewrite,.json,.fountain,.spmd,.txt,text/plain" hidden />
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <script>
+      import '../scripts/projects-page';
+    </script>
+  </body>
+</html>

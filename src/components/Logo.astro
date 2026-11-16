@@ -1,0 +1,33 @@
+---
+/**
+ * Terra Script logo, inlined from src/img/Group 32.svg.
+ * The light-grey wordmark and white square become `currentColor`, so the
+ * logo follows the text colour (dark on light theme, light on dark theme).
+ *  - variant="full": symbol + "terra script" wordmark
+ *  - variant="mark": symbol only
+ */
+import raw from '../img/Group 32.svg?raw';
+
+interface Props {
+  variant?: 'full' | 'mark';
+  /** Unique per page: prefixes gradient ids so two logos don't clash. */
+  id: string;
+  class?: string;
+  label?: string;
+}
+const { variant = 'full', id, class: cls = '', label = 'Terra Script' } = Astro.props;
+
+let svg = raw.replace(/paint(\d+)_linear_44_5/g, `${id}-g$1`);
+if (variant === 'mark') {
+  svg = svg
+    .replace(/<path\b[^>]*fill="#E1E1E1"[^>]*\/>\s*/g, '')
+    .replace(/width="958" height="291" viewBox="0 0 958 291"/, 'viewBox="0 -8 301 300"');
+} else {
+  svg = svg.replace(/width="958" height="291" /, '');
+}
+svg = svg
+  .replace(/fill="(white|#E1E1E1)"/g, 'fill="currentColor"')
+  .replace('<svg ', `<svg class="${cls}" role="img" aria-label="${label}" focusable="false" `);
+---
+
+<Fragment set:html={svg} />

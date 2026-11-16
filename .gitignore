@@ -1,0 +1,30 @@
+# Build output & cache
+dist/
+.astro/
+
+# Dependencies
+node_modules/
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Environment variables & secrets
+.env
+.env.production
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+
+# Editor / IDE (opsional)
+.idea/
+# .vscode/*
+# !.vscode/extensions.json
+# !.vscode/launch.json

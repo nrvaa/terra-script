@@ -1,0 +1,393 @@
+---
+import '../styles/global.css';
+import HeadBoot from '../components/HeadBoot.astro';
+import Logo from '../components/Logo.astro';
+import ThemeSwitch from '../components/ThemeSwitch.astro';
+import Loader from '../components/Loader.astro';
+import { ELEMENTS, DUAL_ICON } from '../scripts/types';
+import { en_ as T, type Key } from '../scripts/i18n';
+
+type Item = { key: Key; action: string; kbd?: string; check?: string; raw?: string } | 'sep';
+const menus: { id: string; key: Key; items: Item[] }[] = [
+  {
+    id: 'file',
+    key: 'menu.file',
+    items: [
+      { key: 'm.projects', action: 'projects' },
+      { key: 'm.new', action: 'new' },
+      { key: 'm.open', action: 'open', kbd: 'Ctrl+O' },
+      'sep',
+      { key: 'm.saveTerra', action: 'save-terra', kbd: 'Ctrl+Shift+S' },
+      { key: 'm.export', action: 'export', kbd: 'Ctrl+Shift+E' },
+      'sep',
+      { key: 'm.titlePage', action: 'title-page' },
+      'sep',
+      { key: 'm.print', action: 'print', kbd: 'Ctrl+P' },
+    ],
+  },
+  {
+    id: 'edit',
+    key: 'menu.edit',
+    items: [
+      { key: 'm.undo', action: 'undo', kbd: 'Ctrl+Z' },
+      { key: 'm.redo', action: 'redo', kbd: 'Ctrl+Y' },
+      'sep',
+      { key: 'm.selectAll', action: 'select-all', kbd: 'Ctrl+A' },
+    ],
+  },
+  {
+    id: 'format',
+    key: 'menu.format',
+    items: [
+      // Element names are industry terms and stay in English in every language.
+      ...ELEMENTS.map((e) => ({ key: 'm.dual' as Key, raw: e.label, action: `type-${e.type}`, kbd: e.key ? `Alt+${e.key}` : undefined })),
+      'sep' as const,
+      { key: 'm.dual', action: 'dual', kbd: 'Alt+D' },
+    ],
+  },
+  {
+    id: 'view',
+    key: 'menu.view',
+    items: [
+      { key: 'm.viewScript', action: 'view-script', check: 'view=script' },
+      { key: 'm.viewCards', action: 'view-cards', check: 'view=cards' },
+      'sep',
+      { key: 'm.showTitle', action: 'toggle-title-sheet', check: 'showTitlePage' },
+      { key: 'm.sceneNumbers', action: 'toggle-scene-numbers', check: 'sceneNumbers' },
+      { key: 'm.pageMarkers', action: 'toggle-page-markers', check: 'pageMarkers' },
+      { key: 'm.sidebar', action: 'toggle-sidebar', check: 'sidebar', kbd: 'Ctrl+\\' },
+      'sep',
+      { key: 'm.themeLight', action: 'theme-light', check: 'theme=light' },
+      { key: 'm.themeDark', action: 'theme-dark', check: 'theme=dark' },
+      { key: 'm.themeSystem', action: 'theme-system', check: 'theme=system' },
+      'sep',
+      { key: 'm.paperAuto', action: 'paper-color-auto', check: 'paperColor=auto' },
+      { key: 'm.paperLight', action: 'paper-color-light', check: 'paperColor=light' },
+      { key: 'm.paperDark', action: 'paper-color-dark', check: 'paperColor=dark' },
+      'sep',
+      { key: 'm.letter', action: 'paper-letter', check: 'paper=letter' },
+      { key: 'm.a4', action: 'paper-a4', check: 'paper=a4' },
+      'sep',
+      { key: 'm.zoomIn', action: 'zoom-in', kbd: 'Ctrl+=' },
+      { key: 'm.zoomOut', action: 'zoom-out', kbd: 'Ctrl+-' },
+      { key: 'm.zoomReset', action: 'zoom-reset' },
+      'sep',
+      { key: 'm.langEn', action: 'lang-en', check: 'lang=en' },
+      { key: 'm.langId', action: 'lang-id', check: 'lang=id' },
+    ],
+  },
+  {
+    id: 'production',
+    key: 'menu.production',
+    items: [{ key: 'm.takes', action: 'takes', kbd: 'Alt+T' }],
+  },
+  {
+    id: 'reports',
+    key: 'menu.reports',
+    items: [
+      { key: 'm.reportScenes', action: 'report-scenes' },
+      { key: 'm.reportChars', action: 'report-characters' },
+      { key: 'm.reportStats', action: 'report-stats' },
+    ],
+  },
+  {
+    id: 'help',
+    key: 'menu.help',
+    items: [
+      { key: 'm.shortcuts', action: 'shortcuts', kbd: 'Ctrl+/' },
+      { key: 'm.sample', action: 'load-sample' },
+      { key: 'm.about', action: 'about' },
+    ],
+  },
+];
+
+const hintKey = (type: string) => `hint.${type}` as Key;
+---
+
+<html lang="en">
+  <head>
+    <HeadBoot title={T('ui.appTitle')} />
+    <style id="page-style" is:inline>@page { size: letter; }</style>
+  </head>
+  <body class="app h-screen flex flex-col overflow-hidden">
+    <Loader label={T('ui.loading')} />
+    <!-- Top bar -->
+    <header class="topbar shrink-0">
+      <div class="flex items-center gap-3 px-3 h-11">
+        <a href="/projects" class="home-link shrink-0" title={T('ui.allProjects')} data-i18n-title="ui.allProjects">
+          <Logo id="hdr" class="brand-logo" />
+        </a>
+        <input
+          id="doc-title"
+          class="doc-title"
+          placeholder={T('ui.docTitle')}
+          aria-label={T('ui.docTitle')}
+          data-i18n-placeholder="ui.docTitle"
+          data-i18n-aria="ui.docTitle"
+          autocomplete="off"
+          spellcheck="false"
+        />
+        <span id="save-status" class="text-muted text-xs ml-auto whitespace-nowrap hidden sm:inline" aria-live="polite"></span>
+        <ThemeSwitch label={T('proj.theme')} />
+      </div>
+      <div class="menubar-row">
+      <nav class="menubar" aria-label={T('ui.mainMenu')} data-i18n-aria="ui.mainMenu">
+        {
+          menus.map((m) => (
+            <div class="menu" data-menu={m.id}>
+              <button type="button" class="menu-btn" data-menu-btn aria-haspopup="true" aria-expanded="false" data-i18n={m.key}>
+                {T(m.key)}
+              </button>
+              <div class="menu-pop" role="menu">
+                {m.items.map((it) =>
+                  it === 'sep' ? (
+                    <div class="menu-sep" role="separator" />
+                  ) : (
+                    <button
+                      type="button"
+                      class="menu-item"
+                      role={it.check ? 'menuitemcheckbox' : 'menuitem'}
+                      data-action={it.action}
+                      data-check={it.check}
+                    >
+                      <span class="menu-check" aria-hidden="true">✓</span>
+                      {it.raw ? <span class="flex-1">{it.raw}</span> : <span class="flex-1" data-i18n={it.key}>{T(it.key)}</span>}
+                      {it.kbd && <kbd>{it.kbd}</kbd>}
+                    </button>
+                  ),
+                )}
+              </div>
+            </div>
+          ))
+        }
+      </nav>
+          <div class="radio-container view-switch" role="radiogroup" aria-label={T('view.label')} data-i18n-aria="view.label">
+            <input type="radio" name="view" id="view-script" value="script" data-view="script" checked />
+            <label for="view-script"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M9 12h6M9 16h6"/></svg><span data-i18n="view.script">{T('view.script')}</span></label>
+            <input type="radio" name="view" id="view-cards" value="cards" data-view="cards" />
+            <label for="view-cards"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg><span data-i18n="view.cards">{T('view.cards')}</span></label>
+            <div class="glider-container" aria-hidden="true"><div class="glider"></div></div>
+          </div>
+      </div>
+    </header>
+
+    <!-- Element toolbar -->
+    <div id="el-toolbar" class="toolbar shrink-0" role="toolbar" aria-label={T('ui.elementTypes')} data-i18n-aria="ui.elementTypes">
+      <div class="toolbar-inner">
+        <button type="button" class="tool" id="btn-title" title={T('ui.titleBtnTip')} data-i18n-title="ui.titleBtnTip" aria-pressed="false">
+          <span class="tool-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M9 10h6"/><path d="M10 13h4"/><path d="M9 18h2"/></svg></span>
+          <span class="tool-label" data-i18n="ui.titleBtn">{T('ui.titleBtn')}</span>
+        </button>
+        <span class="tool-sep" aria-hidden="true"></span>
+        {
+          ELEMENTS.map((e) => {
+            const suffix = e.key ? ` (Alt+${e.key})` : '';
+            return (
+              <button
+                type="button"
+                class="tool"
+                data-el-type={e.type}
+                title={T(hintKey(e.type)) + suffix}
+                data-i18n-title={hintKey(e.type)}
+                data-title-suffix={suffix}
+                aria-pressed="false"
+              >
+                <span class="tool-icon" set:html={e.icon} />
+                <span class="tool-label">{e.label}</span>
+              </button>
+            );
+          })
+        }
+        <button type="button" class="tool" id="btn-dual" title={T('ui.dualTip')} data-i18n-title="ui.dualTip">
+          <span class="tool-icon" set:html={DUAL_ICON} />
+          <span class="tool-label">Dual</span>
+        </button>
+      </div>
+      <select id="type-select" class="type-select" aria-label={T('ui.elementTypes')} data-i18n-aria="ui.elementTypes">
+        {ELEMENTS.map((e) => <option value={e.type}>{e.label}</option>)}
+      </select>
+    </div>
+
+    <div class="flex flex-1 min-h-0 relative">
+      <button type="button" class="panel-reveal" id="btn-show-sidebar" title={T('ui.showPanel')} aria-label={T('ui.showPanel')} data-i18n-title="ui.showPanel" data-i18n-aria="ui.showPanel" hidden>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m14 10 2 2-2 2"/></svg>
+      </button>
+      <!-- Sidebar -->
+      <aside id="sidebar" class="sidebar">
+        <div class="tabs" role="tablist">
+          <button type="button" role="tab" data-tab="scenes"><span data-i18n="tab.scenes">{T('tab.scenes')}</span> <span id="scene-count" class="pill">0</span></button>
+          <button type="button" role="tab" data-tab="characters" data-i18n="tab.characters">{T('tab.characters')}</button>
+          <button type="button" role="tab" data-tab="stats" data-i18n="tab.stats">{T('tab.stats')}</button>
+          <button type="button" class="panel-hide" id="btn-hide-sidebar" title={T('ui.hidePanel')} aria-label={T('ui.hidePanel')} data-i18n-title="ui.hidePanel" data-i18n-aria="ui.hidePanel">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M9 4v16"/><path d="m16 10-2 2 2 2"/></svg>
+          </button>
+        </div>
+        <div class="flex-1 overflow-y-auto">
+          <ol id="scene-list" data-panel="scenes" class="nav-list"></ol>
+          <ul id="char-list" data-panel="characters" class="nav-list" hidden></ul>
+          <dl id="stats-list" data-panel="stats" class="p-3 grid gap-2" hidden></dl>
+        </div>
+      </aside>
+
+      <!-- Writing area -->
+      <section id="board" class="board flex-1 overflow-auto" aria-label={T('view.cards')} data-i18n-aria="view.cards" hidden></section>
+      <main class="desk flex-1 overflow-auto">
+        <section id="title-sheet" class="paper title-sheet" aria-label={T('sheet.label')} data-i18n-aria="sheet.label">
+          <span class="sheet-label" data-i18n="sheet.label">{T('sheet.label')}</span>
+          <div class="tp-main">
+            {(
+              [
+                ['title', 'tp-title'],
+                ['credit', ''],
+                ['author', ''],
+                ['source', 'tp-source'],
+              ] as const
+            ).map(([field, cls]) => (
+              <textarea
+                data-tp={field}
+                class={`tp-field ${cls}`}
+                rows="1"
+                spellcheck="false"
+                placeholder={T(`tp.${field}` as Key)}
+                aria-label={T(`tp.${field}Aria` as Key)}
+                data-i18n-placeholder={`tp.${field}`}
+                data-i18n-aria={`tp.${field}Aria`}
+              />
+            ))}
+          </div>
+          <div class="tp-foot">
+            <textarea data-tp="contact" class="tp-field tp-left" rows="3" spellcheck="false" placeholder={T('tp.contact')} aria-label={T('tp.contactAria')} data-i18n-placeholder="tp.contact" data-i18n-aria="tp.contactAria"></textarea>
+            <textarea data-tp="draftDate" class="tp-field tp-right" rows="1" spellcheck="false" placeholder={T('tp.draftDate')} aria-label={T('tp.draftDateAria')} data-i18n-placeholder="tp.draftDate" data-i18n-aria="tp.draftDateAria"></textarea>
+          </div>
+        </section>
+        <div id="paper" class="paper">
+          <div id="page-markers" aria-hidden="true"></div>
+          <div id="editor" class="script" role="textbox" aria-multiline="true" aria-label={T('ui.script')} data-i18n-aria="ui.script"></div>
+        </div>
+      </main>
+      <aside id="takes-panel" class="takes-panel" aria-label={T('take.title')} data-i18n-aria="take.title" hidden></aside>
+    </div>
+
+    <!-- Status bar -->
+    <footer class="statusbar shrink-0">
+      <span><span data-i18n="st.element">{T('st.element')}</span> <b id="st-type">Action</b></span>
+      <span class="hidden md:inline">Enter → <b id="st-enter">Action</b></span>
+      <span class="hidden md:inline">Tab → <b id="st-tab">Character</b></span>
+      <button type="button" id="btn-takes" class="st-btn ml-auto" title={T('take.title') + ' (Alt+T)'}>
+        <i class="take-dot" aria-hidden="true"></i><span id="st-takes">{T('take.title')}</span>
+      </button>
+      <span id="st-pages"></span>
+      <span id="st-words"></span>
+      <button type="button" id="btn-paper" class="st-btn" title={T('st.paperTip')} data-i18n-title="st.paperTip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M12 9v9"/><path d="M12 9a4.5 4.5 0 0 1 0 9" fill="currentColor"/></svg>
+        <span><span data-i18n="st.paper">{T('st.paper')}</span>: <b id="st-paper">{T('st.paperAuto')}</b></span>
+      </button>
+      <span class="hidden sm:inline" id="st-zoom">100%</span>
+    </footer>
+
+    <input id="file-input" type="file" accept=".terra,.tewrite,.json,.fountain,.spmd,.txt,text/plain" hidden />
+    <div id="toast" class="toast" role="status" hidden></div>
+
+    <!-- Export dialog -->
+    <dialog id="dlg-export" class="dialog dialog-wide" aria-labelledby="ex-heading">
+      <form id="form-export" method="dialog" class="grid gap-4">
+        <h2 id="ex-heading" class="text-lg font-semibold" data-i18n="ex.title">{T('ex.title')}</h2>
+
+        <fieldset class="ex-group">
+          <legend data-i18n="ex.format">{T('ex.format')}</legend>
+          <div class="ex-formats">
+            {(['pdf', 'fountain', 'txt', 'terra'] as const).map((f) => (
+              <label class="ex-format">
+                <input type="radio" name="format" value={f} />
+                <span class="ex-format-name">
+                  <span data-i18n={`ex.${f}`}>{T(`ex.${f}` as Key)}</span>
+                  <span class="ex-ext">.{f}</span>
+                </span>
+                <span class="ex-desc" data-i18n={`ex.${f}Desc`}>{T(`ex.${f}Desc` as Key)}</span>
+              </label>
+            ))}
+          </div>
+        </fieldset>
+
+        <fieldset class="ex-group">
+          <legend data-i18n="ex.include">{T('ex.include')}</legend>
+          <div class="ex-checks">
+            {(
+              [
+                ['script', 'ex.script', 'ex.scriptDesc'],
+                ['title', 'ex.titlePage', 'ex.titlePageDesc'],
+                ['stats', 'ex.stats', 'ex.statsDesc'],
+                ['chars', 'ex.chars', 'ex.charsDesc'],
+                ['takes', 'ex.takes', 'ex.takesDesc'],
+              ] as const
+            ).map(([name, label, desc]) => (
+              <label class="ex-check">
+                <input type="checkbox" name={name} />
+                <span>
+                  <span class="ex-check-name" data-i18n={label}>{T(label)}</span>
+                  <span class="ex-desc" data-desc-for={name} data-i18n={desc}>{T(desc)}</span>
+                </span>
+              </label>
+            ))}
+          </div>
+          <p id="ex-note" class="ex-note"></p>
+        </fieldset>
+
+        <div class="flex items-center justify-end gap-2">
+          <button type="button" class="btn" data-close data-i18n="proj.cancel">{T('proj.cancel')}</button>
+          <button type="submit" class="btn btn-primary btn-icon" value="export">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+            <span data-i18n="ex.go">{T('ex.go')}</span>
+          </button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Help dialog -->
+    <dialog id="dlg-help" class="dialog dialog-wide">
+      <form method="dialog">
+        <h2 class="text-lg font-semibold mb-3" data-i18n="help.title">{T('help.title')}</h2>
+        <div class="grid sm:grid-cols-2 gap-x-8 gap-y-1 text-sm">
+          <div class="help-row"><span data-i18n="help.newEl">{T('help.newEl')}</span><kbd>Enter</kbd></div>
+          <div class="help-row"><span data-i18n="help.changeType">{T('help.changeType')}</span><kbd>Tab</kbd> / <kbd>Shift+Tab</kbd></div>
+          <div class="help-row"><span data-i18n="help.emptyEnter">{T('help.emptyEnter')}</span><span class="text-muted">Action → Character → Action</span></div>
+          <div class="help-row"><span data-i18n-html="help.paren" set:html={T('help.paren')} /><span class="text-muted">→ Parenthetical</span></div>
+          <div class="help-row"><span data-i18n-html="help.scene" set:html={T('help.scene')} /><span class="text-muted">→ Scene</span></div>
+          <div class="help-row"><span data-i18n="help.suggest">{T('help.suggest')}</span><kbd>↑</kbd><kbd>↓</kbd> <span data-i18n="help.then">{T('help.then')}</span> <kbd>Enter</kbd>/<kbd>Tab</kbd></div>
+          {ELEMENTS.filter((e) => e.key).map((e) => (
+            <div class="help-row"><span>{e.label}</span><kbd>Alt+{e.key}</kbd></div>
+          ))}
+          <div class="help-row"><span>Dual dialogue</span><kbd>Alt+D</kbd></div>
+          <div class="help-row"><span data-i18n="help.undo">{T('help.undo')}</span><kbd>Ctrl+Z</kbd> <kbd>Ctrl+Y</kbd></div>
+          <div class="help-row"><span data-i18n="help.save">{T('help.save')}</span><kbd>Ctrl+S</kbd> <kbd>Ctrl+Shift+S</kbd></div>
+          <div class="help-row"><span data-i18n="help.open">{T('help.open')}</span><kbd>Ctrl+O</kbd></div>
+          <div class="help-row"><span data-i18n="help.pdf">{T('help.pdf')}</span><kbd>Ctrl+Shift+E</kbd></div>
+          <div class="help-row"><span data-i18n="help.print">{T('help.print')}</span><kbd>Ctrl+P</kbd></div>
+          <div class="help-row"><span data-i18n="help.zoom">{T('help.zoom')}</span><kbd>Ctrl+=</kbd> <kbd>Ctrl+-</kbd></div>
+        </div>
+        <div class="flex justify-end pt-4"><button class="btn btn-primary"><span data-i18n="btn.close">{T('btn.close')}</span></button></div>
+      </form>
+    </dialog>
+
+    <!-- About dialog -->
+    <dialog id="dlg-about" class="dialog dialog-wide">
+      <form method="dialog" class="text-sm grid gap-2">
+        <h2 class="text-lg font-semibold" data-i18n="about.title">{T('about.title')}</h2>
+        <p data-i18n="about.p1">{T('about.p1')}</p>
+        <ul class="list-disc pl-5 grid gap-1">
+          {(['about.li1', 'about.li2', 'about.li3', 'about.li4', 'about.li5'] as const).map((k) => (
+            <li data-i18n-html={k} set:html={T(k)} />
+          ))}
+        </ul>
+        <p data-i18n-html="about.p2" set:html={T('about.p2')} />
+        <div class="flex justify-end pt-2"><button class="btn btn-primary"><span data-i18n="btn.close">{T('btn.close')}</span></button></div>
+      </form>
+    </dialog>
+
+    <div id="print-root" aria-hidden="true"></div>
+
+    <script>
+      import '../scripts/app';
+    </script>
+  </body>
+</html>

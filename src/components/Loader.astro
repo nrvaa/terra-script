@@ -1,0 +1,19 @@
+---
+/** Full-screen loader — adapted from Uiverse.io by TamaniPhiri, with Terra Script colours and logo. */
+import Logo from './Logo.astro';
+interface Props {
+  label: string;
+  /** Start hidden (shown later from script, e.g. while creating a project). */
+  hidden?: boolean;
+}
+const { label, hidden = false } = Astro.props;
+---
+
+<div id="app-loader" class:list={['app-loader', hidden && 'is-done']} role="status" aria-busy={hidden ? 'false' : 'true'} hidden={hidden}>
+  <div class="flex-col gap-4 w-full flex items-center justify-center">
+    <div class="w-28 h-28 border-8 text-4xl animate-spin border-gray-300 dark:border-gray-700 flex items-center justify-center rounded-full loader-ring">
+      <Logo id="loader" variant="mark" class="animate-ping loader-mark" label={label} />
+    </div>
+  </div>
+  <span class="sr-only" data-i18n="ui.loading">{label}</span>
+</div>

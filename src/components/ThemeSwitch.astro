@@ -1,0 +1,17 @@
+---
+/** Light/dark switch — adapted from Uiverse.io by JustCode14 (moon & stars / sun & cloud). */
+interface Props {
+  label: string;
+}
+const { label } = Astro.props;
+---
+
+<label class="switch theme-switch" title={label} data-i18n-title="proj.theme">
+  <input type="checkbox" class="theme-switch-input" aria-label={label} data-i18n-aria="proj.theme" />
+  <span class="slider" aria-hidden="true">
+    <span class="star star_1"></span>
+    <span class="star star_2"></span>
+    <span class="star star_3"></span>
+    <svg viewBox="0 0 16 16" class="cloud"><path fill="#fff" d="M4.6 13.2h7.1a2.9 2.9 0 0 0 .5-5.76 4 4 0 0 0-7.73-.52A3.15 3.15 0 0 0 4.6 13.2z"></path></svg>
+  </span>
+</label>
