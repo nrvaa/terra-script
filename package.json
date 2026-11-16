@@ -11,7 +11,7 @@
     "preview": "astro preview",
     "astro": "astro",
     "desktop:dev": "tauri dev",
-    "desktop:build": "tauri build",
+    "desktop:build": "tauri build && node scripts/copy-installer.mjs",
     "tauri": "tauri"
   },
   "dependencies": {

@@ -149,8 +149,13 @@ const features: { t: Key; d: Key; b: Key; icon: string }[] = [
           <p class="land-lead" data-i18n="land.lead">{T('land.lead')}</p>
           <div class="land-ctas">
             <a href="/projects" id="cta-main" class="btn btn-primary btn-lg"><span data-i18n="land.start">{T('land.start')}</span></a>
+            <a href="/downloads/TerraScript-Setup.exe" download id="cta-download" class="btn btn-primary btn-lg">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 20h16"/></svg>
+              <span data-i18n="land.download">{T('land.download')}</span>
+            </a>
             <button type="button" id="cta-sample" class="btn btn-lg" data-i18n="land.sample">{T('land.sample')}</button>
           </div>
+          <p class="land-dl-note" data-i18n="land.downloadNote">{T('land.downloadNote')}</p>
         </div>
 
         <!-- 3D glass logo card: adapted from Uiverse.io by Smit-Prajapati, in Terra colours -->
