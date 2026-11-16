@@ -1824,6 +1824,10 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; }
 .land-ctas { display: flex; flex-wrap: wrap; gap: 10px; margin: 28px 0 0 1.8rem; }
 .land-ctas .btn-primary svg { margin-right: 8px; flex: none; }
 .land-dl-note { margin: 12px 0 0 1.8rem; font-size: 12.5px; color: var(--muted); }
+/* Phones and tablets can't run the Windows installer. */
+@media (max-width: 640px), (hover: none) and (pointer: coarse) {
+  #cta-download, .land-dl-note { display: none; }
+}
 /* The card sits on the page like a photo dropped on a script: tilted, nudged down. */
 .land-hero .tc-stage { margin-top: 64px; }
 .land-hero .tc-parent { transform: rotate(6deg); transition: transform 0.6s var(--expo-out, ease); }
