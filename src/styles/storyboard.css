@@ -2,7 +2,7 @@
 /* Storyboard view                                                     */
 /* ------------------------------------------------------------------ */
 /* Script / Cards / Storyboard */
-.radio-container.view-switch { --total-radio: 3; }
+.radio-container.view-switch { --total-radio: 4; }
 
 .storyboard { padding: 20px 24px 80px; --sb-col: 240px; }
 .storyboard[hidden] { display: none; }

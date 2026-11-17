@@ -17,6 +17,9 @@ import {
   type Take,
 } from './types';
 
+/** Short random id for a scene (same alphabet as projects.newId). */
+const newSceneId = () => Date.now().toString(36).slice(-4) + Math.random().toString(36).slice(2, 8);
+
 /** Block properties stored as data attributes on the element. */
 type Props = Partial<Pick<Block, 'text' | 'synopsis' | 'color' | 'takes' | 'board' | 'mark' | 'omit' | 'num' | 'newPage' | 'pg' | 'pgLine' | 'fmt'>>;
 
@@ -154,6 +157,7 @@ export class ScreenplayEditor {
   }
 
   getBlocks(): Block[] {
+    const sids = new Set<string>();
     return this.els().map((el) => {
       const rich = readRich(el);
       const b: Block = { type: (el.dataset.type as ElType) || 'action', text: rich.text };
@@ -165,6 +169,12 @@ export class ScreenplayEditor {
         b.pgLine = Number(el.dataset.pgLine) || 0;
       }
       if (b.type === 'scene') {
+        // Every scene keeps one stable id (the schedule refers to it). New scenes,
+        // and copies that came with a duplicate id, get a fresh one here, so it is
+        // part of every undo step from the moment the scene exists.
+        if (!el.dataset.sid || sids.has(el.dataset.sid)) el.dataset.sid = newSceneId();
+        sids.add(el.dataset.sid);
+        b.sid = el.dataset.sid;
         if (el.dataset.lnum) b.num = el.dataset.lnum;
         if (el.dataset.newPage) b.newPage = true;
         if (el.dataset.omit) {
@@ -251,7 +261,7 @@ export class ScreenplayEditor {
       el.dataset.type = type;
       if (type !== 'character') delete el.dataset.dual;
       if (type !== 'scene') {
-        for (const k of ['synopsis', 'color', 'takes', 'board', 'omit', 'lnum', 'newPage']) delete el.dataset[k];
+        for (const k of ['synopsis', 'color', 'takes', 'board', 'omit', 'lnum', 'newPage', 'sid']) delete el.dataset[k];
       }
       this.setText(el, text, fmt);
     }
@@ -460,6 +470,7 @@ export class ScreenplayEditor {
       if (b.omit?.length) d.dataset.omit = JSON.stringify(b.omit);
       if (b.num) d.dataset.lnum = b.num;
       if (b.newPage) d.dataset.newPage = '1';
+      if (b.sid) d.dataset.sid = b.sid;
     }
     this.setText(d, b.text, b.fmt);
     return d;
@@ -783,6 +794,8 @@ export class ScreenplayEditor {
 
   private insertBlocks(incoming: Block[]) {
     this.flush();
+    // Pasted scenes are new scenes: they get their own ids.
+    incoming = incoming.map(({ sid: _sid, ...b }) => b);
     let sel = this.getSel();
     if (!sel) return;
     const caret = sel.collapsed ? sel.start : this.deleteRange(sel);

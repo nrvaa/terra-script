@@ -1874,32 +1874,77 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; }
 }
 .land-hero .tc-stage { position: relative; }
 
-/* Tilted ribbon of feature names */
-.land-ribbon {
-  position: relative;
-  margin: 8px -4vw 32px;
-  padding: 14px 0;
-  transform: rotate(-2.5deg);
-  background: var(--accent);
-  color: #fff;
+/* Feature slider — adapted from a "LogoSlider" marquee.
+   Every item sits in the same grid cell and slides across on its own, delayed
+   by its index (--item-index / --count), so the row never needs a duplicate.
+   Both edges fade out through --blurs layers of increasing backdrop blur. */
+.logo-slider {
+  --item: 260px;
+  --ink: #27272a;
+  width: 100%;
+  margin: 8px 0 36px;
   overflow: hidden;
-  box-shadow: 0 18px 40px -18px rgb(80 40 160 / 0.5);
+  container-type: inline-size;
 }
-.land-ribbon-track { display: flex; width: max-content; animation: ribbon-roll 38s linear infinite; }
-.land-ribbon-set {
+.dark .logo-slider { --ink: #e4e4e7; }
+.logo-slider__container {
+  position: relative;
+  display: grid;
+  width: 100%;
+  min-height: 80px;
+  mask-image: linear-gradient(90deg, transparent, #000 6%, #000 94%, transparent);
+}
+.logo-slider__track { display: grid; grid-template-areas: 'stack'; align-items: center; height: 80px; margin: 0; padding: 0; list-style: none; }
+.logo-slider__item {
+  /* The distance every item travels: the wider of the screen and the whole row. */
+  --track: max(100cqi, calc(var(--count) * var(--item)));
+  grid-area: stack;
+  display: grid;
+  place-items: center;
+  width: var(--item);
+  height: 80%;
+  translate: var(--track) 0;
+  animation: logo-slide calc(var(--speed) * 1s) linear infinite;
+  animation-delay: calc(var(--speed) * -1s * (var(--count) - var(--item-index)) / var(--count));
+}
+@keyframes logo-slide {
+  from { translate: var(--track) 0; }
+  to { translate: calc(var(--item) * -1) 0; }
+}
+.logo-slider__container[data-direction="right"] .logo-slider__item { animation-direction: reverse; }
+.logo-slider__container[data-pause-on-hover="true"]:hover .logo-slider__item,
+.logo-slider__container:focus-within .logo-slider__item { animation-play-state: paused; }
+.logo-slider__logo {
   display: flex;
   align-items: center;
-  gap: 26px;
-  padding-right: 26px;
-  font: 700 15px/1 'Courier Prime', 'Courier New', monospace;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
+  gap: 10px;
+  color: var(--ink);
+  opacity: 0.82;
+  font: 600 15.5px/1.2 'Space Grotesk', 'Inter', sans-serif;
+  letter-spacing: -0.01em;
   white-space: nowrap;
+  transition: color 0.2s ease, opacity 0.2s ease;
 }
-.land-ribbon-dot { opacity: 0.6; font-size: 12px; }
-.dark .land-ribbon { color: #17121f; }
-.land-ribbon:hover .land-ribbon-track { animation-play-state: paused; }
-@keyframes ribbon-roll { to { transform: translateX(-50%); } }
+.logo-slider__logo svg { width: 22px; height: 22px; flex: none; }
+.logo-slider__item:hover .logo-slider__logo { color: var(--accent); opacity: 1; }
+
+.logo-slider__blur { position: absolute; top: 0; bottom: 0; z-index: 2; width: 25%; pointer-events: none; }
+.logo-slider__blur--left { left: 0; rotate: 180deg; }
+.logo-slider__blur--right { right: 0; }
+.logo-slider__blur > div {
+  --b: calc(var(--blur) * (var(--blur-index) * var(--blur-index) * 0.22px + 0.4px));
+  position: absolute;
+  inset: 0;
+  -webkit-backdrop-filter: blur(var(--b));
+  backdrop-filter: blur(var(--b));
+  mask-image: linear-gradient(
+    90deg,
+    transparent calc(var(--blur-index) * 100% / var(--blurs)),
+    #000 calc((var(--blur-index) + 1) * 100% / var(--blurs)),
+    #000 calc((var(--blur-index) + 2) * 100% / var(--blurs)),
+    transparent calc((var(--blur-index) + 3) * 100% / var(--blurs))
+  );
+}
 
 .land-features { padding-top: 48px; padding-bottom: 72px; }
 .land-features .land-slug { max-width: 880px; margin: 0 auto; }
@@ -1947,10 +1992,16 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; }
   .land-lead, .land-ctas, .land-dl-note { margin-left: 0; }
   .land-h1-line:nth-child(2) { margin-left: 0.5em; }
   .land-h1-line:nth-child(3) { margin-left: 1em; }
-  .land-ribbon { margin-inline: -16px; }
+  .logo-slider { --item: 215px; }
+  .logo-slider__logo { font-size: 13.5px; gap: 8px; }
+  .logo-slider__logo svg { width: 18px; height: 18px; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .land-ribbon-track { animation: none; }
+  /* No motion: the same items as a still, wrapped row. */
+  .logo-slider__container { mask-image: none; }
+  .logo-slider__track { display: flex; flex-wrap: wrap; justify-content: center; gap: 6px 26px; height: auto; padding: 8px 16px; }
+  .logo-slider__item { width: auto; height: 36px; translate: none; animation: none; }
+  .logo-slider__blur { display: none; }
   .land-hero .tc-parent { transition: none; }
 }
 

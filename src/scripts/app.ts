@@ -10,6 +10,8 @@ import { createCardsBoard } from './cards';
 import { renameCharacter } from './rename';
 import { createTakesPanel } from './takes';
 import { createStoryboard, panelLabel } from './storyboard';
+import { createProduction } from './production';
+import { sceneInfos } from './production-data';
 import { buildStoryboardPdf } from './storyboard-pdf';
 import {
   clearUnsaved,
@@ -21,6 +23,7 @@ import {
   loadProject,
   markBackedUp,
   migrateLegacy,
+  newId,
   requestPersistence,
   saveProject,
   serializeProject,
@@ -47,6 +50,7 @@ import {
   type Revision,
   type ScriptDoc,
   type ScriptLayout,
+  type Production,
   type Tag,
   type TitlePage,
   type Take,
@@ -76,7 +80,7 @@ interface Settings {
   exportScript: boolean;
   exportStats: boolean;
   exportChars: boolean;
-  view: 'script' | 'cards' | 'board';
+  view: 'script' | 'cards' | 'board' | 'prod';
   exportTakes: boolean;
   // Customize
   autocomplete: boolean;
@@ -146,6 +150,8 @@ let titlePage: TitlePage = emptyTitlePage();
 let layoutX: Omit<ScriptLayout, 'paper' | 'sceneNumbers'> = {};
 let revision: Revision | undefined;
 let tags: Tag[] = [];
+/** Pre-production data (Production tab). */
+let production: Production | undefined;
 let lastLaid: LaidPage[] = [];
 
 setLang(settings.lang);
@@ -217,6 +223,7 @@ function currentDoc(): ScriptDoc {
     layout: currentLayout(),
     ...(revision ? { revision } : {}),
     ...(tags.length ? { tags } : {}),
+    ...(production ? { production } : {}),
   };
 }
 
@@ -348,9 +355,10 @@ function afterChange() {
   updateTakeStatus(editor.currentIndex());
 }
 
-function openDoc(doc: { titlePage?: Partial<TitlePage>; blocks: Block[]; layout?: ScriptDoc['layout']; revision?: Revision; tags?: Tag[] }) {
+function openDoc(doc: { titlePage?: Partial<TitlePage>; blocks: Block[]; layout?: ScriptDoc['layout']; revision?: Revision; tags?: Tag[]; production?: Production }) {
   revision = doc.revision;
   tags = doc.tags ?? [];
+  production = doc.production;
   features.resetRevisionCache();
   if (doc.layout) {
     const { paper: p, sceneNumbers: sn, ...rest } = doc.layout;
@@ -362,7 +370,8 @@ function openDoc(doc: { titlePage?: Partial<TitlePage>; blocks: Block[]; layout?
   loading = true;
   titlePage = normalizeTitlePage(doc.titlePage);
   syncTitleUI();
-  editor.load(doc.blocks);
+  // Every scene gets its stable id before the first undo step (the schedule refers to it).
+  editor.load(doc.blocks.map((b) => (b.type === 'scene' && !b.sid ? { ...b, sid: newId() } : b)));
   loading = false;
   editor.focus(0, 0);
   updateDocTitle();
@@ -471,10 +480,39 @@ const storyboard = createStoryboard(storyboardEl, editor, {
   toast,
 });
 
-/** Re-render the card or storyboard view after a change (optionally not while the user types in it). */
+/* -------------------------------------------------------------------- */
+/* Production (pre-production tools)                                     */
+/* -------------------------------------------------------------------- */
+
+const productionEl = $('#production');
+const productionView = createProduction(productionEl, {
+  editor,
+  projectId,
+  get: () => production,
+  set(p) {
+    production = p;
+    docMetaChanged();
+  },
+  scenes() {
+    const blocks = editor.getBlocks();
+    return sceneInfos(blocks, tags, features.layoutOptions(blocks), sceneLabels(blocks, layoutX));
+  },
+  sceneNumbers: () => settings.sceneNumbers,
+  title: () => titlePage.title.trim(),
+  paper: () => settings.paper,
+  toast,
+  onOpenScene: (blockIndex) => {
+    setView('script');
+    editor.focus(blockIndex);
+  },
+  save: (name, data, type) => saveFile(name, data, type),
+});
+
+/** Re-render the card, storyboard or production view after a change (optionally not while the user types in it). */
 function renderViews(unlessEditing = false) {
   if (settings.view === 'cards' && !(unlessEditing && board.isEditing())) board.render();
   else if (settings.view === 'board' && !(unlessEditing && storyboard.isEditing())) storyboard.render();
+  else if (settings.view === 'prod' && !(unlessEditing && productionView.isEditing())) productionView.render();
 }
 
 async function exportStoryboard() {
@@ -605,14 +643,19 @@ function setView(view: Settings['view']) {
   settings.view = view;
   const cards = view === 'cards';
   const sb = view === 'board';
+  const prod = view === 'prod';
   boardEl.hidden = !cards;
   storyboardEl.hidden = !sb;
-  $('main.desk').hidden = cards || sb;
-  $('#el-toolbar').hidden = cards || sb;
+  productionEl.hidden = !prod;
+  $('main.desk').hidden = cards || sb || prod;
+  $('#el-toolbar').hidden = cards || sb || prod;
   for (const r of document.querySelectorAll<HTMLInputElement>('input[name=view]')) r.checked = r.value === view;
   editor.closeSuggestions();
   applySettings();
-  if (cards || sb) {
+  if (prod) {
+    editor.flush();
+    renderViews();
+  } else if (cards || sb) {
     editor.flush();
     renderViews();
     // Start at the scene the cursor was in.
@@ -1431,6 +1474,7 @@ const actions: Record<string, () => void> = {
   'view-script': () => setView('script'),
   'view-cards': () => setView('cards'),
   'view-board': () => setView('board'),
+  'view-prod': () => setView('prod'),
   'zoom-in': () => setZoom(settings.zoom + 0.1),
   'zoom-out': () => setZoom(settings.zoom - 0.1),
   'zoom-reset': () => setZoom(1),

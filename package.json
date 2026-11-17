@@ -1,7 +1,7 @@
 {
   "name": "terra-script",
   "type": "module",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "A free, open-source screenwriting app that runs in the browser or as a Windows desktop app.",
   "license": "MIT",
   "author": "nrvaa",

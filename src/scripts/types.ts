@@ -39,6 +39,8 @@ export interface Block {
   /** Locked page that starts at wrapped line `pgLine` of this block. */
   pg?: string;
   pgLine?: number;
+  /** Only on `scene`: stable id, so the shooting schedule keeps pointing at it when scenes move. */
+  sid?: string;
 }
 
 /** Inline style run: characters [start, end) get the flags b(old) i(talic) u(nderline) s(trike). */
@@ -260,12 +262,131 @@ export interface ScriptDoc {
   layout?: ScriptLayout;
   revision?: Revision;
   tags?: Tag[];
+  /** Pre-production: locations, cast, crew, schedule, wardrobe, budget, moodboard. */
+  production?: Production;
   /**
    * Storyboard drawings as data URLs, by id. Only present while a project
    * travels in a .terra file; in the app they live in their own store.
    */
   images?: Record<string, string>;
 }
+
+/* Pre-production --------------------------------------------------------- */
+/* Locations and cast are matched to the script by name (the location part of
+   a scene heading, the character name), so the lists fill themselves from the
+   script and only the extra details are stored here. */
+
+export interface LocationRec {
+  id: string;
+  /** Location name as in the scene headings, e.g. "ALL-NIGHT DINER". */
+  name: string;
+  address?: string;
+  contact?: string;
+  phone?: string;
+  /** Map link or coordinates. */
+  map?: string;
+  notes?: string;
+  /** Cost per shooting day, for the budget. */
+  rate?: number;
+  /** Added by hand (not found in the script). */
+  manual?: boolean;
+}
+
+export interface CastRec {
+  id: string;
+  /** Character name as in the script, e.g. "MAYA". */
+  character: string;
+  actor?: string;
+  phone?: string;
+  email?: string;
+  notes?: string;
+  /** Fee per shooting day, for the budget. */
+  rate?: number;
+  manual?: boolean;
+}
+
+export const CREW_DEPTS = ['direction', 'production', 'camera', 'lighting', 'sound', 'art', 'wardrobe', 'makeup', 'post', 'other'] as const;
+export type CrewDept = (typeof CREW_DEPTS)[number];
+
+export interface CrewRec {
+  id: string;
+  name: string;
+  role: string;
+  dept: CrewDept;
+  phone?: string;
+  email?: string;
+  rate?: number;
+}
+
+export interface ShootDay {
+  id: string;
+  /** YYYY-MM-DD */
+  date?: string;
+  /** General crew call, HH:MM. */
+  call?: string;
+  wrap?: string;
+  /** Scene ids (Block.sid), in shooting order. */
+  scenes: string[];
+  /** Call time per character (upper-case name → HH:MM); default is the crew call. */
+  castCalls?: Record<string, string>;
+  /** Meeting point / base camp, parking, nearest hospital… */
+  notes?: string;
+}
+
+export interface WardrobeChange {
+  id: string;
+  /** Character name as in the script. */
+  character: string;
+  /** "Change 1", "Wedding dress"… */
+  label: string;
+  description?: string;
+  /** Scene ids where this costume is worn. */
+  scenes: string[];
+  /** Reference photo (image store id). */
+  img?: string;
+}
+
+export const BUDGET_CATS = ['development', 'cast', 'crew', 'locations', 'equipment', 'art', 'wardrobe', 'transport', 'catering', 'post', 'other'] as const;
+export type BudgetCat = (typeof BUDGET_CATS)[number];
+
+export interface BudgetLine {
+  id: string;
+  cat: BudgetCat;
+  item: string;
+  qty: number;
+  unit?: string;
+  rate: number;
+  /** Linked to a cast member, crew member or location: the quantity follows the schedule (days). */
+  link?: { kind: 'cast' | 'crew' | 'location'; id: string };
+}
+
+export interface MoodItem {
+  id: string;
+  kind: 'image' | 'color' | 'note';
+  img?: string;
+  color?: string;
+  text?: string;
+}
+export interface Moodboard {
+  id: string;
+  title: string;
+  items: MoodItem[];
+}
+
+export interface Production {
+  locations: LocationRec[];
+  cast: CastRec[];
+  crew: CrewRec[];
+  days: ShootDay[];
+  wardrobe: WardrobeChange[];
+  budget: BudgetLine[];
+  /** Percentage added on top of the budget total. */
+  contingency?: number;
+  currency?: string;
+  moodboards: Moodboard[];
+}
+
+export const emptyProduction = (): Production => ({ locations: [], cast: [], crew: [], days: [], wardrobe: [], budget: [], moodboards: [] });
 
 /** 0 → A, 25 → Z, 26 → AA. */
 const letters = (k: number): string => (k < 26 ? String.fromCharCode(65 + k) : letters(Math.floor(k / 26) - 1) + letters(k % 26));

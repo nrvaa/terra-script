@@ -74,6 +74,56 @@ const ART = [
     <path class="ill-check" d="M108 126l14 14 28-28"/><rect class="ill-panel" x="30" y="186" width="202" height="12" rx="6"/>
     <g transform="rotate(8 228 196)"><path class="ill-paper" d="M196 150h44l18 18v64h-62z"/><path class="ill-fold" d="M240 150v18h18"/>
     <rect class="ill-accent" x="204" y="200" width="46" height="18" rx="5"/><text class="ill-chip on" x="227" y="213" text-anchor="middle">.terra</text></g>`),
+  // 7. Storyboard: three sketched frames with a camera move
+  art(`<rect class="ill-bg" width="300" height="300"/>
+    ${[
+      [28, 36, '1.1'], [158, 36, '1.2'], [28, 166, '1.3'], [158, 166, '1.4'],
+    ]
+      .map(([x, y, n], i) => `<g><rect class="ill-paper" x="${x}" y="${y}" width="114" height="98" rx="8"/><rect class="ill-panel" x="${Number(x) + 8}" y="${Number(y) + 8}" width="98" height="56" rx="4"/>
+        ${i === 0 ? `<path class="ill-arrow" d="M${Number(x) + 18} ${Number(y) + 52}l26-18 18 12 26-20"/>` : i === 1 ? `<circle class="ill-accent" cx="${Number(x) + 57}" cy="${Number(y) + 30}" r="12"/><path class="ill-arrow" d="M${Number(x) + 35} ${Number(y) + 62}c6-14 38-14 44 0"/>` : i === 2 ? `<path class="ill-arrow" d="M${Number(x) + 20} ${Number(y) + 36}h56m-10-8 10 8-10 8"/>` : `<circle class="ill-arrow" cx="${Number(x) + 57}" cy="${Number(y) + 36}" r="18"/><circle class="ill-accent" cx="${Number(x) + 57}" cy="${Number(y) + 36}" r="6"/>`}
+        <text class="ill-mono ill-strong" x="${Number(x) + 8}" y="${Number(y) + 84}">${n}</text>${lines(Number(x) + 44, Number(y) + 78, [58])}</g>`)
+      .join('')}`),
+  // 8. Production: a stripboard day and a call sheet
+  art(`<rect class="ill-bg" width="300" height="300"/>
+    <rect class="ill-paper" x="24" y="34" width="150" height="222" rx="10"/>
+    <text class="ill-mono ill-strong" x="38" y="62">DAY 1</text>${lines(104, 56, [56])}
+    ${['c-blue', 'c-green', 'c-red', 'c-purple', 'c-blue']
+      .map((c, i) => `<rect class="ill-row" x="36" y="${78 + i * 34}" width="126" height="26" rx="5"/><rect class="ill-tag ${c}" x="36" y="${78 + i * 34}" width="10" height="26" rx="3"/>${lines(54, 88 + i * 34, [52 - (i % 2) * 16])}<text class="ill-mono" x="122" y="${96 + i * 34}">${i + 1}/8</text>`)
+      .join('')}
+    <g transform="rotate(6 230 196)"><rect class="ill-panel" x="182" y="120" width="104" height="138" rx="8"/>
+    <rect class="ill-accent" x="192" y="132" width="84" height="16" rx="4"/><text class="ill-chip on" x="234" y="144" text-anchor="middle">CALL 06:30</text>
+    ${lines(194, 162, [76, 60, 70, 44, 66, 52], 13)}</g>`),
+  // 9. Import: a PDF read back into script elements
+  art(`<rect class="ill-bg" width="300" height="300"/>
+    <g transform="rotate(-6 92 140)"><path class="ill-paper" d="M40 60h76l24 24v118H40z"/><path class="ill-fold" d="M116 60v24h24"/>
+    <rect class="ill-accent" x="52" y="90" width="44" height="20" rx="5"/><text class="ill-chip on" x="74" y="104" text-anchor="middle">PDF</text>${lines(52, 124, [72, 60, 76, 48], 14)}</g>
+    <path class="ill-arrow" d="M150 150h30m-10-10 10 10-10 10"/>
+    <rect class="ill-paper" x="190" y="60" width="86" height="180" rx="6"/>
+    ${[
+      ['SCENE', 74], ['ACTION', 110], ['NAME', 70], ['', 96],
+    ]
+      .map(([label, w], i) => `<rect class="${i === 0 ? 'ill-ink' : i === 2 ? 'ill-accent' : 'ill-line'}" x="${i === 2 ? 216 : 200}" y="${80 + i * 34}" width="${Number(w) / 2}" height="7" rx="3"/>${label ? `<text class="ill-mono" x="200" y="${104 + i * 34}">${label}</text>` : ''}`)
+      .join('')}`),
+];
+
+/* Everything the app does, for the sliding strip under the hero. */
+const sliderItems: { k: Key; icon: string }[] = [
+  { k: 'land.f1t', icon: icon('<path d="M6 2h9l5 5v15H6z"/><path d="M9 12h6M9 16h6M9 8h2"/>') },
+  { k: 'land.s.contd', icon: icon('<path d="M8 6h13M8 12h13M8 18h8"/><path d="M3 6h.01M3 12h.01M3 18h.01"/>') },
+  { k: 'land.f2t', icon: icon('<rect x="3" y="4" width="18" height="6" rx="1.5"/><path d="M6 14h12M6 18h8"/>') },
+  { k: 'land.f3t', icon: icon('<rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/>') },
+  { k: 'land.f7t', icon: icon('<rect x="2.5" y="4" width="8.5" height="6.5" rx="1"/><rect x="13" y="4" width="8.5" height="6.5" rx="1"/><path d="M2.5 14h8.5M2.5 17.5h6M13 14h8.5M13 17.5h6"/>') },
+  { k: 'land.s.stripboard', icon: icon('<rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/>') },
+  { k: 'land.s.callsheet', icon: icon('<path d="M9 4h6v3H9z"/><path d="M7 5H5v16h14V5h-2"/><path d="M8 12h8M8 16h5"/>') },
+  { k: 'land.f4t', icon: icon('<path d="M4 9h16v11H4z"/><path d="m4 9 2.5-5h3L7 9M11 9l2.5-5h3L14 9M18 9l2-4"/>') },
+  { k: 'land.s.wardrobe', icon: icon('<path d="M12 6a2 2 0 1 0-2-2"/><path d="M12 6v2l9 7H3l9-7"/>') },
+  { k: 'land.s.budget', icon: icon('<rect x="2" y="6" width="20" height="13" rx="2"/><circle cx="12" cy="12.5" r="2.5"/><path d="M6 10v5M18 10v5"/>') },
+  { k: 'land.s.mood', icon: icon('<rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/>') },
+  { k: 'land.f5t', icon: icon('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>') },
+  { k: 'land.f9t', icon: icon('<path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M3 9V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4"/>') },
+  { k: 'land.s.windows', icon: icon('<rect x="3" y="3" width="8" height="8"/><rect x="13" y="3" width="8" height="8"/><rect x="3" y="13" width="8" height="8"/><rect x="13" y="13" width="8" height="8"/>') },
+  { k: 'land.s.bilingual', icon: icon('<path d="m5 8 6 6M4 14l6-6 2-3M2 5h12M7 2h1"/><path d="m22 22-5-10-5 10M14 18h6"/>') },
+  { k: 'land.f6t', icon: icon('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="m9.5 10 2 2 3.5-3.5"/>') },
 ];
 
 const features: { t: Key; d: Key; b: Key; icon: string }[] = [
@@ -83,6 +133,9 @@ const features: { t: Key; d: Key; b: Key; icon: string }[] = [
   { t: 'land.f4t', d: 'land.f4d', b: 'land.bShoot', icon: icon('<path d="M4 9h16v11H4z"/><path d="m4 9 2.5-5h3L7 9M11 9l2.5-5h3L14 9M18 9l2-4"/>') },
   { t: 'land.f5t', d: 'land.f5d', b: 'land.bShare', icon: icon('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>') },
   { t: 'land.f6t', d: 'land.f6d', b: 'land.bPrivate', icon: icon('<rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/><path d="m9.5 10 2 2 3.5-3.5"/>') },
+  { t: 'land.f7t', d: 'land.f7d', b: 'land.bPlan', icon: icon('<rect x="2.5" y="4" width="8.5" height="6.5" rx="1"/><rect x="13" y="4" width="8.5" height="6.5" rx="1"/><path d="M2.5 14h8.5M2.5 17.5h6M13 14h8.5M13 17.5h6"/>') },
+  { t: 'land.f8t', d: 'land.f8d', b: 'land.bShoot', icon: icon('<rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/>') },
+  { t: 'land.f9t', d: 'land.f9d', b: 'land.bShare', icon: icon('<path d="M12 21V9"/><path d="m7 14 5-5 5 5"/><path d="M3 9V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v4"/>') },
 ];
 ---
 
@@ -202,14 +255,28 @@ const features: { t: Key; d: Key; b: Key; icon: string }[] = [
         </div>
       </section>
 
-      <!-- Tilted ribbon of feature names, scrolling like an end-credits crawl turned sideways -->
-      <div class="land-ribbon" aria-hidden="true">
-        <div class="land-ribbon-track">
-          {[0, 1].map(() => (
-            <span class="land-ribbon-set">
-              {features.map((f) => (<><span data-i18n={f.t}>{T(f.t)}</span><span class="land-ribbon-dot">✦</span></>))}
-            </span>
+      <!-- Feature slider: adapted from a "LogoSlider" marquee. Every item moves on its own
+           (staggered by its index) and both edges fade out through layers of blur. -->
+      <div
+        class="logo-slider"
+        style={`--speed: 48; --count: ${sliderItems.length}; --blurs: 8; --blur: 1;`}
+        role="region"
+        aria-label={T('land.sliderLabel')}
+        data-i18n-aria="land.sliderLabel"
+      >
+        <div class="logo-slider__container" data-direction="left" data-pause-on-hover="true">
+          {['left', 'right'].map((side) => (
+            <div class={`logo-slider__blur logo-slider__blur--${side}`} aria-hidden="true">
+              {Array.from({ length: 8 }, (_, i) => <div style={`--blur-index: ${i}`} />)}
+            </div>
           ))}
+          <ul class="logo-slider__track">
+            {sliderItems.map((s, i) => (
+              <li class="logo-slider__item" style={`--item-index: ${i}`}>
+                <span class="logo-slider__logo"><span set:html={s.icon} /><span data-i18n={s.k}>{T(s.k)}</span></span>
+              </li>
+            ))}
+          </ul>
         </div>
       </div>
 

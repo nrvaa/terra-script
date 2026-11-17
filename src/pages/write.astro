@@ -2,6 +2,7 @@
 import '../styles/global.css';
 import '../styles/features.css';
 import '../styles/storyboard.css';
+import '../styles/production.css';
 import HeadBoot from '../components/HeadBoot.astro';
 import Logo from '../components/Logo.astro';
 import ThemeSwitch from '../components/ThemeSwitch.astro';
@@ -56,6 +57,7 @@ const menus: { id: string; key: Key; items: Item[] }[] = [
       { key: 'm.viewScript', action: 'view-script', check: 'view=script' },
       { key: 'm.viewCards', action: 'view-cards', check: 'view=cards' },
       { key: 'm.viewBoard', action: 'view-board', check: 'view=board' },
+      { key: 'm.viewProd', action: 'view-prod', check: 'view=prod' },
       'sep',
       { key: 'm.showTitle', action: 'toggle-title-sheet', check: 'titleSheet' },
       { key: 'm.sceneNumbers', action: 'toggle-scene-numbers', check: 'sceneNumbers' },
@@ -239,6 +241,8 @@ const hintKey = (type: string) => `hint.${type}` as Key;
             <label for="view-cards"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="1.5"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="1.5"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="1.5"/></svg><span data-i18n="view.cards">{T('view.cards')}</span></label>
             <input type="radio" name="view" id="view-board" value="board" data-view="board" />
             <label for="view-board"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="2.5" y="4" width="8.5" height="6.5" rx="1"/><rect x="13" y="4" width="8.5" height="6.5" rx="1"/><path d="M2.5 14h8.5M2.5 17.5h6M13 14h8.5M13 17.5h6"/></svg><span data-i18n="view.board">{T('view.board')}</span></label>
+            <input type="radio" name="view" id="view-prod" value="prod" data-view="prod" />
+            <label for="view-prod"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 11h16v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="m4 11-.6-3.4a1 1 0 0 1 .8-1.2l13.8-2.4a1 1 0 0 1 1.2.8L19.6 7 4 11"/><path d="m8.2 5.9 2.6 3.6M13.6 5l2.6 3.6"/></svg><span data-i18n="view.prod">{T('view.prod')}</span></label>
             <div class="glider-container" aria-hidden="true"><div class="glider"></div></div>
           </div>
       </div>
@@ -315,6 +319,7 @@ const hintKey = (type: string) => `hint.${type}` as Key;
       <!-- Writing area -->
       <section id="board" class="board flex-1 overflow-auto" aria-label={T('view.cards')} data-i18n-aria="view.cards" hidden></section>
       <section id="storyboard" class="storyboard flex-1 overflow-auto" aria-label={T('view.board')} data-i18n-aria="view.board" hidden></section>
+      <section id="production" class="production flex-1 overflow-auto" aria-label={T('view.prod')} data-i18n-aria="view.prod" hidden></section>
       <main class="desk flex-1 overflow-auto">
         <section id="title-sheet" class="paper title-sheet" aria-label={T('sheet.label')} data-i18n-aria="sheet.label">
           <span class="sheet-label" data-i18n="sheet.label">{T('sheet.label')}</span>

@@ -6,6 +6,7 @@
  */
 import { normalizeTitlePage, parseFountain } from './fountain';
 import { layoutScript } from './pdf';
+import { parseProduction, productionImageIds } from './production-data';
 import {
   BOARD_ASPECTS,
   CAMERA_MOVES,
@@ -300,6 +301,10 @@ export async function getImage(projectId: string, id: string): Promise<Blob | un
   return row.data ? new Blob([row.data], { type: row.type }) : row.blob;
 }
 
+/** Every image a document uses: storyboard drawings, wardrobe photos, moodboards. */
+export const docImageIds = (doc: Pick<ScriptDoc, 'blocks' | 'production'>, into = new Set<string>()) =>
+  productionImageIds(doc.production, imageIds(doc.blocks, into));
+
 /** Ids of every drawing the blocks use, omitted scenes included. */
 export function imageIds(blocks: Block[], into = new Set<string>()): Set<string> {
   for (const b of blocks) {
@@ -352,11 +357,12 @@ export async function gcImages(projectId: string): Promise<void> {
     request(read.objectStore('snapshots').index('project').getAll(projectId) as IDBRequest<Snapshot[]>),
   ]);
   if (!row) return;
-  const keep = imageIds(row.doc.blocks);
-  for (const s of snaps) imageIds(s.doc.blocks, keep);
+  const keep = docImageIds(row.doc);
+  for (const s of snaps) docImageIds(s.doc, keep);
   try {
     const raw = localStorage.getItem(UNSAVED_PREFIX + projectId);
-    if (raw) imageIds((JSON.parse(raw) as { doc?: ScriptDoc }).doc?.blocks ?? [], keep);
+    const unsaved = raw ? (JSON.parse(raw) as { doc?: ScriptDoc }).doc : undefined;
+    if (unsaved?.blocks) docImageIds(unsaved, keep);
   } catch {
     /* ignore */
   }
@@ -375,7 +381,7 @@ export async function gcImages(projectId: string): Promise<void> {
 
 /** The project as a .terra file, with its storyboard drawings inside. */
 export async function serializeProject(projectId: string | null, doc: ScriptDoc): Promise<string> {
-  const ids = imageIds(doc.blocks);
+  const ids = docImageIds(doc);
   if (!projectId || !ids.size) return serializeTerra(doc);
   const images: Record<string, string> = {};
   for (const id of ids) {
@@ -474,6 +480,7 @@ export function serializeTerra(doc: ScriptDoc): string {
       layout: doc.layout,
       ...(doc.revision ? { revision: doc.revision } : {}),
       ...(doc.tags?.length ? { tags: doc.tags } : {}),
+      ...(doc.production ? { production: doc.production } : {}),
       blocks: doc.blocks,
       // Storyboard drawings last, so the script stays readable at the top of the file.
       ...(doc.images && Object.keys(doc.images).length ? { images: doc.images } : {}),
@@ -518,6 +525,8 @@ export function parseTerra(text: string): ScriptDoc {
       .filter((x) => x.text);
     if (tags.length) doc.tags = tags;
   }
+  const production = parseProduction(raw.production, newId);
+  if (production) doc.production = production;
   if (raw.images && typeof raw.images === 'object') {
     const images: Record<string, string> = {};
     for (const [id, url] of Object.entries(raw.images as Record<string, unknown>)) {
@@ -587,6 +596,7 @@ function parseBlocks(items: unknown[], depth: number): Block[] {
     if (type === 'scene') {
       if (typeof b.num === 'string' && b.num.trim()) block.num = b.num.slice(0, 12);
       if (b.newPage === true) block.newPage = true;
+      if (typeof b.sid === 'string' && /^[a-z0-9]{4,40}$/i.test(b.sid)) block.sid = b.sid;
       if (depth === 0 && Array.isArray(b.omit)) {
         const omit = parseBlocks(b.omit as unknown[], 1);
         if (omit.length) block.omit = omit;

@@ -13,6 +13,7 @@ The interface is available in English and Indonesian.
 - **Index cards.** Every scene becomes a card with a synopsis and a colour. Drag the cards to restructure the story and the script follows.
 - **Take log.** Log slate, take, camera and roll for each scene, and rate every take Good, Maybe or Skip.
 - **Storyboard.** Every scene gets a row of panels. Draw each shot with pencil, brush, marker and arrows (stylus pressure supported), or drop in a photo, then add shot size, angle, camera movement, duration and a note. Export the storyboard as a PDF.
+- **Pre-production.** A Production tab built on the script: locations, cast and crew (filled in from scene headings and characters), a stripboard schedule with automatic scheduling, a cast-by-day table, call sheets exported as PDF, wardrobe changes with photos, a budget whose cast, crew and location costs follow the schedule, and moodboards.
 - **Export.** PDF, [Fountain](https://fountain.io) and plain text, plus reports with statistics and a per-character breakdown.
 - **Import.** Open .terra, Fountain and plain-text files, screenplay PDFs (the element of each line is worked out from its indentation) and screenplay JSON in common shapes.
 - **Works offline.** Projects are stored locally. A `.terra` file opens the same way on any other device.
