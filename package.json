@@ -34,6 +34,7 @@
     "@tauri-apps/plugin-dialog": "^2.8.4",
     "@tauri-apps/plugin-fs": "^2.7.1",
     "astro": "^7.4.12",
+    "pdfjs-dist": "4.10.38",
     "tailwindcss": "^4.3.5",
     "three": "^0.180.0"
   },

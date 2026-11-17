@@ -1112,10 +1112,12 @@ fileInput.addEventListener('change', async () => {
   fileInput.value = '';
   if (!file) return;
   let id: string;
+  if (/\.pdf$/i.test(file.name)) toast(t('toast.reading', { file: file.name }));
   try {
     id = await importFile(file);
-  } catch {
-    toast(t('toast.badFile'));
+  } catch (err) {
+    console.error(err);
+    toast(t((err as Error)?.name === 'PdfNoTextError' ? 'toast.pdfNoText' : 'toast.badFile'));
     return;
   }
   await saveNow();

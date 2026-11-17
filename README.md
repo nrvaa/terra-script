@@ -14,6 +14,7 @@ The interface is available in English and Indonesian.
 - **Take log.** Log slate, take, camera and roll for each scene, and rate every take Good, Maybe or Skip.
 - **Storyboard.** Every scene gets a row of panels. Draw each shot with pencil, brush, marker and arrows (stylus pressure supported), or drop in a photo, then add shot size, angle, camera movement, duration and a note. Export the storyboard as a PDF.
 - **Export.** PDF, [Fountain](https://fountain.io) and plain text, plus reports with statistics and a per-character breakdown.
+- **Import.** Open .terra, Fountain and plain-text files, screenplay PDFs (the element of each line is worked out from its indentation) and screenplay JSON in common shapes.
 - **Works offline.** Projects are stored locally. A `.terra` file opens the same way on any other device.
 
 ## Download

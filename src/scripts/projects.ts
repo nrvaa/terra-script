@@ -633,8 +633,23 @@ function parseBlocks(items: unknown[], depth: number): Block[] {
 }
 
 export async function parseScriptFile(file: File): Promise<ScriptDoc> {
+  // Converters are loaded only when needed (PDF.js is large).
+  if (/\.pdf$/i.test(file.name) || file.type === 'application/pdf') {
+    const { pdfToDoc } = await import('./convert-pdf');
+    return pdfToDoc(file);
+  }
   const text = await file.text();
-  if (/\.(terra|tewrite|json)$/i.test(file.name)) return parseTerra(text);
+  if (/\.(terra|tewrite)$/i.test(file.name)) return parseTerra(text);
+  if (/\.json$/i.test(file.name)) {
+    // A .terra file saved as .json opens as one; any other screenplay JSON is converted.
+    const raw = JSON.parse(text) as Record<string, unknown>;
+    const terraShaped =
+      raw?.format === TERRA_FORMAT ||
+      (Array.isArray(raw?.blocks) && (raw.blocks as Record<string, unknown>[]).every((b) => b && VALID_TYPES.has(b.type as string) && typeof b.text === 'string'));
+    if (terraShaped) return parseTerra(text);
+    const { jsonToDoc } = await import('./convert-json');
+    return jsonToDoc(text, file.name);
+  }
   const parsed = parseFountain(text);
   if (!parsed.titlePage.title) parsed.titlePage.title = file.name.replace(/\.[^.]+$/, '');
   return { version: 1, titlePage: normalizeTitlePage(parsed.titlePage), blocks: parsed.blocks };

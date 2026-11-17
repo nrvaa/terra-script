@@ -117,7 +117,9 @@ const en = {
   // Messages
   'toast.dual': 'Put the cursor on the second speaker’s Character or Dialogue to make dual dialogue.',
   'toast.opened': '“{name}” opened.',
-  'toast.badFile': 'Couldn’t read the file. Use .terra, .fountain or .txt.',
+  'toast.badFile': 'Couldn’t read the file. Use .terra, .fountain, .pdf, .json or .txt.',
+  'toast.pdfNoText': 'This PDF has no text to read (it looks scanned). Use a PDF exported from a writing app.',
+  'toast.reading': 'Reading {file}…',
   'toast.pdf': 'PDF downloaded.',
   'toast.pdfFail': 'Couldn’t create the PDF.',
   'toast.includeOn': 'The title page will be included in exports.',
@@ -893,7 +895,9 @@ const id: Record<Key, string> = {
 
   'toast.dual': 'Letakkan kursor pada Character atau Dialogue tokoh kedua untuk membuat dual dialogue.',
   'toast.opened': '“{name}” dibuka.',
-  'toast.badFile': 'File tidak bisa dibaca. Gunakan .terra, .fountain, atau .txt.',
+  'toast.badFile': 'File tidak bisa dibaca. Gunakan .terra, .fountain, .pdf, .json, atau .txt.',
+  'toast.pdfNoText': 'PDF ini tidak berisi teks yang bisa dibaca (sepertinya hasil scan). Gunakan PDF hasil ekspor aplikasi penulisan.',
+  'toast.reading': 'Membaca {file}…',
   'toast.pdf': 'PDF diunduh.',
   'toast.pdfFail': 'Gagal membuat PDF.',
   'toast.includeOn': 'Halaman judul akan disertakan saat ekspor.',

@@ -223,10 +223,12 @@ fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0];
   fileInput.value = '';
   if (!file) return;
+  if (/\.pdf$/i.test(file.name)) toast(t('toast.reading', { file: file.name }));
   try {
     location.href = editorUrl(await importFile(file));
-  } catch {
-    toast(t('toast.badFile'));
+  } catch (err) {
+    console.error(err);
+    toast(t((err as Error)?.name === 'PdfNoTextError' ? 'toast.pdfNoText' : 'toast.badFile'));
   }
 });
 
