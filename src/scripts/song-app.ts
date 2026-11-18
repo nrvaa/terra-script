@@ -26,6 +26,8 @@ import { initDesktopPromo } from './desktop-promo';
 import { chooseNewKind, pickAlbumFor, pickSingles } from './music-dialogs';
 import { drawMockup, loadImage, prepareCover, type MockupBg, type MockupKind } from './cover-mockup';
 import type { PdfCover } from './song-pdf';
+import { searchRegex } from './find';
+import { matchCase as followCase } from './rename';
 import {
   NEXT_SECTION,
   NOTE_COLORS,
@@ -34,6 +36,11 @@ import {
   asSingle,
   emptyAlbum,
   emptySong,
+  CREDIT_ROLES,
+  creditLines,
+  creditNames,
+  creditsOf,
+  type Credit,
   serializeAlbum,
   type AlbumDoc,
   type NoteColor,
@@ -191,6 +198,7 @@ function commit() {
   history.push({ doc: snap, focus });
   if (history.length > 300) history.shift();
   hIndex = history.length - 1;
+  if (albumUndo && albumUndo.hIndex !== hIndex) albumUndo = null;
   scheduleSave();
 }
 
@@ -212,6 +220,7 @@ function restore(i: number) {
 }
 function undo() {
   flushTyping();
+  if (album && albumUndo && albumUndo.hIndex === hIndex) return undoAlbumReplace();
   if (hIndex > 0) restore(hIndex - 1);
 }
 function redo() {
@@ -316,7 +325,10 @@ function lineHtml(l: SongLine, i: number, n: number): string {
   return `<div class="sg-line" data-line="${i}">
     <input class="sg-chords" data-f="chords" value="${esc(l.chords)}" placeholder="${esc(i === 0 ? t('song.chordPh') : '')}" spellcheck="false" autocomplete="off" aria-label="${esc(t('song.chordsOf', { line: nth }))}">
     <div class="sg-lyric-row">
-      <input class="sg-lyric" data-f="lyric" value="${esc(l.lyric)}" placeholder="${esc(n === 1 ? t('song.lyricPh') : '')}" spellcheck="false" autocomplete="off" aria-label="${esc(nth)}">
+      <span class="sg-lyric-wrap">
+        <span class="sg-hl" data-hl aria-hidden="true"></span>
+        <input class="sg-lyric" data-f="lyric" value="${esc(l.lyric)}" placeholder="${esc(n === 1 ? t('song.lyricPh') : '')}" spellcheck="false" autocomplete="off" aria-label="${esc(nth)}">
+      </span>
       <span class="sg-syl" data-syl></span>
       <span class="sg-rhyme" data-rhyme></span>
     </div>
@@ -420,6 +432,7 @@ function activateTrack(i: number) {
   history = [];
   hIndex = -1;
   focus = null;
+  albumUndo = null;
   commit();
   renderChrome();
   updateCounts();
@@ -471,6 +484,7 @@ function renderChrome() {
   document.title = `${(album ? album.title : doc.title).trim() || t(album ? 'mus.albumUntitled' : 'song.untitled')} — Terra Script`;
   renderAlbum();
   syncCover();
+  renderCredits();
 }
 
 function render() {
@@ -510,6 +524,7 @@ function updateCounts() {
   renderStatus(labels);
   // Line counts in the tracklist follow the typing (not while a track is being dragged).
   if (album && dragTrack < 0) renderTracks();
+  if (!findBar.hidden) scheduleFind();
 }
 
 function renderSide(labels: Map<string, string>) {
@@ -786,6 +801,9 @@ function syncScroll(el: HTMLInputElement) {
   if (!row) return;
   const other = row.querySelector<HTMLInputElement>(el.dataset.f === 'lyric' ? '[data-f="chords"]' : '[data-f="lyric"]');
   if (other && other.scrollLeft !== el.scrollLeft) other.scrollLeft = el.scrollLeft;
+  // The find highlights behind the lyric move with it too.
+  const hl = row.querySelector<HTMLElement>('[data-hl]');
+  if (hl) hl.scrollLeft = el.scrollLeft;
 }
 
 stage.addEventListener('keydown', onKeyDown);
@@ -967,6 +985,87 @@ for (const el of document.querySelectorAll<HTMLInputElement | HTMLSelectElement>
   });
 }
 
+/* -------------------------------------------------------------------- */
+/* Credits: everyone on the song, each with a role                       */
+/* -------------------------------------------------------------------- */
+
+const creditsEl = $('#sg-credits');
+let creditsShownFor: SongDoc | null = null;
+/** A role's name in the UI language ("Other" roles use the name the writer typed). */
+const roleLabel = (c: Credit) => (c.role === 'other' ? c.custom?.trim() || t('cred.role.other') : t(`cred.role.${c.role}` as Key));
+/** "Lyricist: Maya, Rani" lines for exports, print and PDF. */
+const creditLinesFor = (d: SongDoc) => creditLines(d, roleLabel);
+
+function creditHtml(c: Credit, i: number): string {
+  const options = CREDIT_ROLES.map(
+    (r) => `<option value="${r}"${r === c.role ? ' selected' : ''}>${esc(t(r === 'other' ? 'cred.role.otherPick' : (`cred.role.${r}` as Key)))}</option>`,
+  ).join('');
+  return `<div class="sg-credit" data-credit="${i}">
+    <label class="sg-credit-name"><span>${esc(t('cred.name'))}</span><input class="text-input" data-cf="name" value="${esc(c.name)}" placeholder=" " maxlength="120" autocomplete="off" spellcheck="false"></label>
+    <div class="sg-credit-row">
+      <label class="sg-credit-role"><span>${esc(t('cred.role'))}</span><select class="text-input" data-cf="role">${options}</select></label>
+      <button type="button" class="sg-credit-del" data-credit-del title="${esc(t('cred.remove'))}" aria-label="${esc(t('cred.remove'))}">×</button>
+    </div>
+    ${c.role === 'other' ? `<label class="sg-credit-custom"><span>${esc(t('cred.custom'))}</span><input class="text-input" data-cf="custom" value="${esc(c.custom ?? '')}" placeholder=" " maxlength="60" autocomplete="off"></label>` : ''}
+  </div>`;
+}
+
+/** Draw the current song's credits (not while you're typing in them). */
+function renderCredits(force = false) {
+  if (!force && creditsShownFor === doc && creditsEl.contains(document.activeElement)) return;
+  creditsShownFor = doc;
+  // Songs from before credits existed: their "written by" becomes the first credit.
+  if (!doc.credits) doc.credits = creditsOf(doc).map((c) => ({ ...c }));
+  creditsEl.innerHTML = doc.credits.map(creditHtml).join('');
+}
+
+/** `writer` keeps the names, for the project list, mockups and older versions. */
+const syncWriter = () => {
+  doc.writer = creditNames(doc.credits ?? []);
+  if (album) renderTracks();
+};
+const creditAt = (el: Element) => doc.credits?.[Number(el.closest<HTMLElement>('[data-credit]')?.dataset.credit)];
+
+creditsEl.addEventListener('input', (e) => {
+  const el = e.target as HTMLInputElement;
+  const c = creditAt(el);
+  if (!c) return;
+  if (el.dataset.cf === 'name') {
+    c.name = el.value;
+    syncWriter();
+  } else if (el.dataset.cf === 'custom') c.custom = el.value;
+  else return;
+  typed();
+});
+creditsEl.addEventListener('change', (e) => {
+  const el = e.target as HTMLSelectElement;
+  if (el.dataset.cf !== 'role') return;
+  const c = creditAt(el);
+  if (!c) return;
+  const i = doc.credits!.indexOf(c);
+  c.role = el.value as Credit['role'];
+  if (c.role !== 'other') delete c.custom;
+  commit();
+  renderCredits(true);
+  // "Other…": type the role's name right away.
+  if (c.role === 'other') creditsEl.querySelector<HTMLInputElement>(`[data-credit="${i}"] [data-cf="custom"]`)?.focus();
+});
+creditsEl.addEventListener('click', (e) => {
+  const del = (e.target as HTMLElement).closest('[data-credit-del]');
+  const c = del && creditAt(del);
+  if (!c) return;
+  doc.credits = doc.credits!.filter((x) => x !== c);
+  syncWriter();
+  commit();
+  renderCredits(true);
+});
+$('[data-credit-add]').addEventListener('click', () => {
+  doc.credits = [...(doc.credits ?? []), { name: '', role: 'songwriter' }];
+  commit();
+  renderCredits(true);
+  creditsEl.querySelector<HTMLInputElement>('.sg-credit:last-child [data-cf="name"]')?.focus();
+});
+
 function setChords(on: boolean) {
   showChords = on;
   writeSettings({ songChords: on });
@@ -1020,10 +1119,21 @@ document.addEventListener('keydown', (e) => {
     addNote();
     return;
   }
+  if (e.key === 'F3' && !mod && !e.altKey) {
+    e.preventDefault();
+    if (findBar.hidden) openFind();
+    else stepFind(e.shiftKey ? -1 : 1);
+    return;
+  }
   if (!mod || e.altKey) return;
   const k = e.key.toLowerCase();
-  // Typing in a sticky note keeps the browser's own undo.
-  if ((k === 'z' || k === 'y') && (e.target as HTMLElement).closest?.('.sn')) return;
+  if ((k === 'f' || k === 'h') && !e.shiftKey) {
+    e.preventDefault();
+    openFind(k === 'h');
+    return;
+  }
+  // Typing in a sticky note or the find bar keeps the browser's own undo.
+  if ((k === 'z' || k === 'y') && (e.target as HTMLElement).closest?.('.sn, #find-bar')) return;
   if (k === 'o') {
     e.preventDefault();
     fileInput.click();
@@ -1069,7 +1179,7 @@ const fileBase = (title = album ? album.title : doc.title, untitled = album ? t(
     .replace(/\s+/g, '-')
     .toLowerCase();
 
-const textOpts = (chords: boolean) => ({ chords, byLabel: t('song.by'), key: t('song.key'), capo: 'Capo', untitled: t('song.untitled') });
+const textOpts = (chords: boolean) => ({ chords, byLabel: t('song.by'), key: t('song.key'), capo: 'Capo', untitled: t('song.untitled'), credits: creditLinesFor });
 const albumLabel = () => t(album?.type === 'ep' ? 'mus.kind.ep' : 'mus.kind.album');
 const albumOpts = (chords: boolean) => ({ ...textOpts(chords), albumUntitled: t('mus.albumUntitled'), typeLabel: albumLabel(), tracklistLabel: t('mus.tracklist') });
 
@@ -1147,7 +1257,7 @@ function songPrintHtml(s: SongDoc, title: string, withCover = false): string {
   return `<div class="sp-print">
     ${withCover ? printCover('sp-cover') : ''}
     <h1>${esc(title)}</h1>
-    ${s.writer.trim() ? `<p class="sp-by">${esc(t('song.by'))} ${esc(s.writer.trim())}</p>` : ''}
+    ${creditLinesFor(s).map((l) => `<p class="sp-by">${esc(l)}</p>`).join('')}
     ${meta ? `<p class="sp-meta">${esc(meta)}</p>` : ''}
     ${s.sections
       .map(
@@ -1609,6 +1719,274 @@ document.querySelector('.sg-album')!.addEventListener('click', (e) => {
 });
 
 /* -------------------------------------------------------------------- */
+/* Find & replace (Ctrl+F / Ctrl+H): the lyrics of this song, or of      */
+/* every song in an album. Matches are painted in a layer behind each    */
+/* lyric field (same font, same spacing), since inputs can't mark text.  */
+/* -------------------------------------------------------------------- */
+
+interface SongMatch {
+  /** Track (0 for a single), section index and id, line, and the match's range in the lyric. */
+  t: number;
+  si: number;
+  sec: string;
+  line: number;
+  s: number;
+  e: number;
+  found: string;
+}
+type FindPos = Pick<SongMatch, 't' | 'si' | 'line' | 's'>;
+const findBar = $('#find-bar');
+const findInput = $<HTMLInputElement>('#find-input');
+const repInput = $<HTMLInputElement>('#find-replace');
+const findCount = $('#find-count');
+const repRow = findBar.querySelector<HTMLElement>('[data-find-row="replace"]')!;
+const fbtn = (n: string) => findBar.querySelector<HTMLButtonElement>(`[data-find="${n}"]`)!;
+let fCase = false;
+let fWord = false;
+let fKeep = true;
+let found: SongMatch[] = [];
+let fCur = -1;
+let fAnchor: FindPos = { t: 0, si: 0, line: 0, s: 0 };
+let findFrame = 0;
+/** Set after an album-wide "Replace all": undo right after it restores every song at once. */
+let albumUndo: { json: string; hIndex: number } | null = null;
+
+const posBefore = (a: FindPos, b: FindPos) => a.t - b.t || a.si - b.si || a.line - b.line || a.s - b.s;
+const songsToSearch = () => (album ? album.tracks.map((d, t) => ({ t, d: t === trackIdx ? doc : d })) : [{ t: 0, d: doc }]);
+
+function computeFind() {
+  found = [];
+  const re = searchRegex(findInput.value, fCase, fWord);
+  if (!re) return;
+  for (const { t: ti, d } of songsToSearch()) {
+    d.sections.forEach((sec, si) => {
+      // Repeats show another section's lines: those are searched once, in the original.
+      if (sourceOf(d, sec) !== sec) return;
+      sec.lines.forEach((l, li) => {
+        for (const m of l.lyric.matchAll(re)) found.push({ t: ti, si, sec: sec.id, line: li, s: m.index!, e: m.index! + m[0].length, found: m[0] });
+      });
+    });
+  }
+}
+
+function refreshFind(scroll = false) {
+  cancelAnimationFrame(findFrame);
+  if (findBar.hidden) return;
+  computeFind();
+  fCur = found.length ? Math.max(0, found.findIndex((m) => posBefore(m, fAnchor) >= 0)) : -1;
+  paintFind(scroll);
+}
+const scheduleFind = () => {
+  cancelAnimationFrame(findFrame);
+  findFrame = requestAnimationFrame(() => refreshFind());
+};
+
+/** The row of a match, if its song's paper is on the desk. */
+function matchRow(m: SongMatch): HTMLElement | null {
+  const paper = stage.querySelector(`[data-paper="${album ? m.t : 0}"]`);
+  return paper?.querySelector<HTMLElement>(`[data-sec="${m.sec}"] [data-line="${m.line}"]`) ?? null;
+}
+
+function paintFind(scroll: boolean) {
+  for (const hl of stage.querySelectorAll<HTMLElement>('[data-hl]')) if (hl.innerHTML) hl.innerHTML = '';
+  if (!findBar.hidden) {
+    // One pass per line: the lyric with <mark>s at the matches (the current one stands out).
+    const byRow = new Map<HTMLElement, { m: SongMatch; i: number }[]>();
+    found.forEach((m, i) => {
+      const row = matchRow(m);
+      if (!row) return;
+      if (!byRow.has(row)) byRow.set(row, []);
+      byRow.get(row)!.push({ m, i });
+    });
+    for (const [row, list] of byRow) {
+      const input = row.querySelector<HTMLInputElement>('[data-f="lyric"]')!;
+      const text = input.value;
+      let html = '';
+      let k = 0;
+      for (const { m, i } of list) {
+        const cls = i === fCur ? ' class="cur"' : '';
+        html += esc(text.slice(k, m.s)) + '<mark' + cls + '>' + esc(text.slice(m.s, m.e)) + '</mark>';
+        k = m.e;
+      }
+      const hl = row.querySelector<HTMLElement>('[data-hl]')!;
+      hl.innerHTML = html + esc(text.slice(k));
+      hl.scrollLeft = input.scrollLeft;
+    }
+  }
+  findInput.classList.toggle('find-miss', !!findInput.value && !found.length);
+  findCount.textContent = !findInput.value ? '' : found.length ? t('find.count', { i: fCur + 1, n: found.length }) : t('find.none');
+  for (const n of ['prev', 'next', 'replace', 'replace-all']) fbtn(n).disabled = !found.length;
+  const m = found[fCur];
+  if (!scroll || !m) return;
+  // A match in a song that isn't on the desk (one song at a time): show that song.
+  if (!matchRow(m) && album) {
+    openTrack(m.t, true);
+    findInput.focus();
+    return refreshFind(true);
+  }
+  matchRow(m)?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+}
+
+function stepFind(dir: 1 | -1) {
+  if (!found.length) return;
+  fCur = (fCur + dir + found.length) % found.length;
+  const m = found[fCur];
+  fAnchor = { t: m.t, si: m.si, line: m.line, s: m.s };
+  paintFind(true);
+}
+
+const replacementFor = (m: SongMatch) => (fKeep ? followCase(m.found, repInput.value) : repInput.value);
+
+/** Make the match's song the one being edited (needed before changing it). */
+function toMatchSong(m: SongMatch) {
+  if (!album || m.t === trackIdx) return;
+  if (scrollMode()) activateTrack(m.t);
+  else openTrack(m.t, true);
+}
+
+function replaceOne() {
+  const m = found[fCur];
+  if (!m) return;
+  const keep = document.activeElement as HTMLElement | null;
+  toMatchSong(m);
+  const text = replacementFor(m);
+  change(() => {
+    const l = section(m.sec)?.lines[m.line];
+    if (l) l.lyric = l.lyric.slice(0, m.s) + text + l.lyric.slice(m.e);
+  }, null);
+  keep?.focus();
+  // Carry on with the match after the replaced text.
+  fAnchor = { t: m.t, si: m.si, line: m.line, s: m.s + text.length };
+  refreshFind(true);
+}
+
+function replaceAll() {
+  if (!found.length) return;
+  flushTyping();
+  writeBack();
+  const keep = document.activeElement as HTMLElement | null;
+  const n = found.length;
+  const before = album ? JSON.stringify(album) : '';
+  const otherSongs = found.some((m) => m.t !== trackIdx);
+  const apply = (d: SongDoc, list: SongMatch[]) => {
+    // Right to left, so earlier offsets in a line stay valid.
+    for (const m of [...list].sort((a, b) => b.s - a.s)) {
+      const l = d.sections[m.si]?.lines[m.line];
+      if (l) l.lyric = l.lyric.slice(0, m.s) + replacementFor(m) + l.lyric.slice(m.e);
+    }
+  };
+  if (album) for (const [ti, d] of album.tracks.entries()) if (ti !== trackIdx) apply(d, found.filter((m) => m.t === ti));
+  change(() => apply(doc, found.filter((m) => m.t === (album ? trackIdx : 0))), null);
+  if (album && otherSongs) {
+    albumUndo = { json: before, hIndex };
+    if (scrollMode()) buildPapers();
+    renderTracks();
+    scheduleSave();
+  }
+  keep?.focus();
+  refreshFind();
+  toast(t('find.replaced', { n }));
+}
+
+/** Undo an album-wide "Replace all": every song back as it was. */
+function undoAlbumReplace() {
+  const snap = albumUndo!;
+  albumUndo = null;
+  album = JSON.parse(snap.json) as AlbumDoc;
+  doc = album.tracks[trackIdx];
+  history = [];
+  hIndex = -1;
+  buildPapers();
+  commit();
+  scheduleSave();
+  toast(t('find.undoneAll'));
+}
+
+function setFindReplace(on: boolean) {
+  repRow.hidden = !on;
+  fbtn('toggle').setAttribute('aria-expanded', String(on));
+  findBar.classList.toggle('find-with-replace', on);
+}
+
+function openFind(withReplace = false) {
+  const wasOpen = !findBar.hidden;
+  // Start with the selected words of a lyric line.
+  const el = document.activeElement as HTMLInputElement | null;
+  if (el?.dataset?.f === 'lyric' && el.selectionStart !== el.selectionEnd) findInput.value = el.value.slice(el.selectionStart!, el.selectionEnd!);
+  if (focus) fAnchor = { t: album ? trackIdx : 0, si: doc.sections.findIndex((x) => x.id === focus!.sec), line: focus.line, s: focus.caret };
+  findBar.hidden = false;
+  if (withReplace) setFindReplace(true);
+  else if (!wasOpen) setFindReplace(false);
+  refreshFind(true);
+  const field = withReplace && findInput.value ? repInput : findInput;
+  field.focus();
+  field.select();
+}
+
+function closeFind() {
+  if (findBar.hidden) return;
+  const m = found[fCur];
+  findBar.hidden = true;
+  paintFind(false);
+  // Leave the current match selected in its line.
+  if (!m) return;
+  toMatchSong(m);
+  focusField({ sec: m.sec, line: m.line, field: 'lyric', caret: m.s });
+  fieldEl({ sec: m.sec, line: m.line, field: 'lyric' })?.setSelectionRange(m.s, m.e);
+}
+
+function toggleFindOpt(name: 'case' | 'word' | 'keep') {
+  if (name === 'case') fCase = !fCase;
+  else if (name === 'word') fWord = !fWord;
+  else fKeep = !fKeep;
+  fbtn('case').setAttribute('aria-pressed', String(fCase));
+  fbtn('word').setAttribute('aria-pressed', String(fWord));
+  fbtn('keep').setAttribute('aria-pressed', String(fKeep));
+  if (name !== 'keep') refreshFind(true);
+}
+
+findBar.addEventListener('mousedown', (e) => {
+  if ((e.target as HTMLElement).closest('button')) e.preventDefault();
+});
+findBar.addEventListener('click', (e) => {
+  const name = (e.target as HTMLElement).closest<HTMLElement>('[data-find]')?.dataset.find;
+  if (name === 'prev') stepFind(-1);
+  else if (name === 'next') stepFind(1);
+  else if (name === 'close') closeFind();
+  else if (name === 'case' || name === 'word' || name === 'keep') toggleFindOpt(name);
+  else if (name === 'toggle') {
+    setFindReplace(!!repRow.hidden);
+    (repRow.hidden ? findInput : repInput).focus();
+  } else if (name === 'replace') replaceOne();
+  else if (name === 'replace-all') replaceAll();
+});
+findInput.addEventListener('input', () => {
+  const m = found[fCur];
+  // While typing, stay on (or after) the match you were looking at.
+  if (m) fAnchor = { t: m.t, si: m.si, line: m.line, s: m.s };
+  refreshFind(true);
+});
+findBar.addEventListener('keydown', (e) => {
+  const mod = e.ctrlKey || e.metaKey;
+  if (e.key === 'Escape') {
+    e.preventDefault();
+    e.stopPropagation();
+    closeFind();
+  } else if (e.altKey && !mod && (e.code === 'KeyC' || e.code === 'KeyW' || e.code === 'KeyP')) {
+    e.preventDefault();
+    e.stopPropagation();
+    toggleFindOpt(e.code === 'KeyC' ? 'case' : e.code === 'KeyW' ? 'word' : 'keep');
+  } else if (e.key === 'Enter' && e.target === findInput) {
+    e.preventDefault();
+    stepFind(e.shiftKey ? -1 : 1);
+  } else if (e.key === 'Enter' && e.target === repInput) {
+    e.preventDefault();
+    if (mod) replaceAll();
+    else replaceOne();
+  }
+});
+
+/* -------------------------------------------------------------------- */
 /* Cover art and mockups                                                 */
 /* -------------------------------------------------------------------- */
 
@@ -1829,6 +2207,8 @@ const actions: Record<string, () => void> = {
   'save-terra': () => void downloadTerra(),
   export: openExport,
   print: printSong,
+  find: () => openFind(),
+  replace: () => openFind(true),
   'cover-pick': () => coverInput.click(),
   'cover-mockup': () => void openMockup(),
   'to-album': () => void toAlbum(),

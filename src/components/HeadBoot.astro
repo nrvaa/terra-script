@@ -38,3 +38,8 @@ const { title } = Astro.props;
     }
   } catch {}
 </script>
+<script>
+  // Styled tooltips for every title attribute (scripts/tooltips.ts).
+  import { initTooltips } from '../scripts/tooltips';
+  initTooltips();
+</script>

@@ -64,6 +64,17 @@ export interface StickyNote {
   color: NoteColor;
 }
 
+/** What someone did on a song. 'other' carries its own name in `custom`. */
+export type CreditRole = 'songwriter' | 'lyricist' | 'composer' | 'arranger' | 'producer' | 'vocalist' | 'featuring' | 'other';
+export const CREDIT_ROLES: CreditRole[] = ['songwriter', 'lyricist', 'composer', 'arranger', 'producer', 'vocalist', 'featuring', 'other'];
+
+export interface Credit {
+  name: string;
+  role: CreditRole;
+  /** The role's name when `role` is 'other'. */
+  custom?: string;
+}
+
 export interface SongDoc {
   version: 1;
   /** Tracks in an album have an id (singles don't need one). */
@@ -80,6 +91,11 @@ export interface SongDoc {
   sections: SongSection[];
   /** The writer's sticky notes (never printed or exported as lyrics). */
   notes?: StickyNote[];
+  /**
+   * Everyone credited on the song, with their role. `writer` is kept as the
+   * names joined ("Maya, Rani") for the project list and older versions.
+   */
+  credits?: Credit[];
   /** Cover art (singles): an image id in the project's image store. */
   cover?: string;
 }
@@ -438,9 +454,39 @@ export function metaLine(doc: SongDoc, labels: { key: string; capo: string }): s
 }
 
 /** A chord sheet (or just the lyrics) as plain text. */
-export function songToText(doc: SongDoc, opts: { chords: boolean; byLabel: string; key: string; capo: string; untitled: string }): string {
+/** A song's credits: its list, or (songs from before credits existed) its writer as songwriter. */
+export function creditsOf(doc: SongDoc): Credit[] {
+  if (doc.credits) return doc.credits;
+  return doc.writer.trim() ? [{ name: doc.writer.trim(), role: 'songwriter' }] : [];
+}
+
+/** The names, joined: what `writer` holds. */
+export const creditNames = (credits: Credit[]) => [...new Set(credits.map((c) => c.name.trim()).filter(Boolean))].join(', ');
+
+/**
+ * Credits grouped by role, in the order roles first appear:
+ * "Lyricist: Maya, Rani", "Composer: Dimas". `label` names a role in the UI language.
+ */
+export function creditLines(doc: SongDoc, label: (c: Credit) => string): string[] {
+  const groups = new Map<string, string[]>();
+  for (const c of creditsOf(doc)) {
+    const name = c.name.trim();
+    if (!name) continue;
+    const role = label(c);
+    if (!groups.has(role)) groups.set(role, []);
+    if (!groups.get(role)!.includes(name)) groups.get(role)!.push(name);
+  }
+  return [...groups].map(([role, names]) => `${role}: ${names.join(', ')}`);
+}
+
+export function songToText(
+  doc: SongDoc,
+  opts: { chords: boolean; byLabel: string; key: string; capo: string; untitled: string; credits?: (doc: SongDoc) => string[] },
+): string {
   const out: string[] = [doc.title.trim() || opts.untitled];
-  if (doc.writer.trim()) out.push(`${opts.byLabel} ${doc.writer.trim()}`);
+  const credits = opts.credits?.(doc) ?? [];
+  if (credits.length) out.push(...credits);
+  else if (doc.writer.trim()) out.push(`${opts.byLabel} ${doc.writer.trim()}`);
   const meta = opts.chords ? metaLine(doc, opts) : '';
   if (meta) out.push(meta);
   const labels = sectionLabels(doc);
@@ -457,7 +503,7 @@ export function songToText(doc: SongDoc, opts: { chords: boolean; byLabel: strin
 /** The whole album as text: a heading with the tracklist, then every song. */
 export function albumToText(
   a: AlbumDoc,
-  opts: { chords: boolean; byLabel: string; key: string; capo: string; untitled: string; albumUntitled: string; typeLabel: string },
+  opts: { chords: boolean; byLabel: string; key: string; capo: string; untitled: string; albumUntitled: string; typeLabel: string; credits?: (doc: SongDoc) => string[] },
 ): string {
   const head = [a.title.trim() || opts.albumUntitled, [a.artist.trim(), opts.typeLabel, a.year.trim()].filter(Boolean).join(' · '), ''];
   a.tracks.forEach((t, i) => head.push(`${i + 1}. ${t.title.trim() || opts.untitled}`));
@@ -539,6 +585,18 @@ export function parseSong(raw: unknown): SongDoc {
     ...(typeof r.cover === 'string' && IMAGE_ID.test(r.cover) ? { cover: r.cover } : {}),
     title: str(r.title),
     writer: str(r.writer),
+    ...(Array.isArray(r.credits)
+      ? {
+          credits: (r.credits as Record<string, unknown>[])
+            .filter((c) => c && typeof c === 'object')
+            .slice(0, 50)
+            .map((c) => {
+              const role = CREDIT_ROLES.includes(c.role as CreditRole) ? (c.role as CreditRole) : 'other';
+              const custom = str(c.custom, 60);
+              return { name: str(c.name, 120), role, ...(role === 'other' && custom ? { custom } : {}) };
+            }),
+        }
+      : {}),
     key: str(r.key, 12),
     bpm: str(r.bpm, 8),
     time: str(r.time, 8),

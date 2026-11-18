@@ -6,8 +6,8 @@
  * Sticky notes are the writer's own and are never printed.
  */
 import { pdfString } from './pdf';
-import { textWidth } from './pdf-doc';
-import { linesOf, metaLine, sectionLabels, type AlbumDoc, type SongDoc } from './song';
+import { textWidth, wrapText } from './pdf-doc';
+import { creditNames, creditsOf, linesOf, metaLine, sectionLabels, type AlbumDoc, type SongDoc } from './song';
 
 const PAPER = { letter: { w: 612, h: 792 }, a4: { w: 595, h: 842 } };
 const MARGIN = 54; // 0.75in
@@ -26,6 +26,8 @@ export interface SongPdfOptions {
   untitled: string;
   /** Cover art to put on the first page (a square JPEG). */
   cover?: PdfCover;
+  /** A song's credit lines ("Lyricist: Maya, Rani"), in the UI language. */
+  credits?: (doc: SongDoc) => string[];
 }
 
 /** A square JPEG, embedded as is (the PDF reader decodes it: DCTDecode). */
@@ -108,9 +110,17 @@ class Writer {
     if (withCover && this.cover) this.image(this.w - MARGIN - coverSize, this.h - MARGIN - coverSize, coverSize);
     this.y -= 20;
     this.text(title, MARGIN, 'HB', 18);
-    if (doc.writer.trim()) {
-      this.y -= 16;
-      this.text(`${o.byLabel} ${doc.writer.trim()}`, MARGIN, 'H', 10.5, '0.35 g');
+    // Credits, one role per line (wrapped beside the cover); older songs: "by writer".
+    const credits = o.credits?.(doc) ?? [];
+    const lines = credits.length ? credits : doc.writer.trim() ? [`${o.byLabel} ${doc.writer.trim()}`] : [];
+    const width = this.w - 2 * MARGIN - (withCover && this.cover ? coverSize + 16 : 0);
+    let first = true;
+    for (const line of lines) {
+      for (const part of wrapText(line, 10.5, width)) {
+        this.y -= first ? 16 : 13.5;
+        first = false;
+        this.text(part, MARGIN, 'H', 10.5, '0.35 g');
+      }
     }
     const meta = o.chords ? metaLine(doc, o) : '';
     if (meta) {
@@ -226,7 +236,12 @@ export function buildAlbumPdf(a: AlbumDoc, o: AlbumPdfOptions): Blob {
     w.room(18);
     w.y -= 18;
     w.text(`${i + 1}.`, MARGIN, 'H', 11, '0.45 g');
-    w.text(t.title.trim() || o.untitled, MARGIN + 24, 'H', 11);
+    const name = t.title.trim() || o.untitled;
+    w.text(name, MARGIN + 24, 'H', 11);
+    // The song's writers after its title, when they fit on the line.
+    const writers = creditNames(creditsOf(t));
+    const x = MARGIN + 24 + textWidth(name, 11) + 12;
+    if (writers && x + textWidth(writers, 9.5) < w.w - MARGIN) w.text(writers, x, 'H', 9.5, '0.5 g');
   });
   a.tracks.forEach((t, i) => w.song(t, `${i + 1}. ${t.title.trim() || o.untitled}`, o));
   return w.build(title);

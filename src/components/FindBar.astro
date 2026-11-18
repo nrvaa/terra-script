@@ -1,0 +1,37 @@
+---
+// Find & replace bar (Ctrl+F / Ctrl+H): the screenplay editor (find.ts) and the song editor (song-app.ts).
+import { en_ as T } from '../scripts/i18n';
+---
+
+<div id="find-bar" class="find-bar" role="search" aria-label={T('find.label')} data-i18n-aria="find.label" hidden>
+  <button type="button" class="find-btn find-toggle" data-find="toggle" aria-expanded="false" title={T('find.toggle')} data-i18n-title="find.toggle" aria-label={T('find.toggle')} data-i18n-aria="find.toggle">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg>
+  </button>
+  <div class="find-rows">
+    <div class="find-row">
+      <div class="find-field">
+        <input id="find-input" class="find-input" placeholder={T('find.find')} aria-label={T('find.find')} data-i18n-placeholder="find.find" data-i18n-aria="find.find" autocomplete="off" spellcheck="false" />
+        <button type="button" class="find-opt" data-find="case" aria-pressed="false" title={T('find.case')} aria-label={T('find.case')} data-i18n-title="find.case" data-i18n-aria="find.case">Aa</button>
+        <button type="button" class="find-opt" data-find="word" aria-pressed="false" title={T('find.word')} aria-label={T('find.word')} data-i18n-title="find.word" data-i18n-aria="find.word"><span class="find-word-icon">ab</span></button>
+      </div>
+      <span id="find-count" class="find-count" aria-live="polite"></span>
+      <button type="button" class="find-btn" data-find="prev" title={T('find.prev')} aria-label={T('find.prev')} data-i18n-title="find.prev" data-i18n-aria="find.prev">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 19V5"/><path d="m5 12 7-7 7 7"/></svg>
+      </button>
+      <button type="button" class="find-btn" data-find="next" title={T('find.next')} aria-label={T('find.next')} data-i18n-title="find.next" data-i18n-aria="find.next">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 5v14"/><path d="m19 12-7 7-7-7"/></svg>
+      </button>
+      <button type="button" class="find-btn" data-find="close" title={T('find.close')} aria-label={T('find.close')} data-i18n-title="find.close" data-i18n-aria="find.close">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="find-row" data-find-row="replace" hidden>
+      <div class="find-field">
+        <input id="find-replace" class="find-input" placeholder={T('find.replace')} aria-label={T('find.replace')} data-i18n-placeholder="find.replace" data-i18n-aria="find.replace" autocomplete="off" spellcheck="false" />
+        <button type="button" class="find-opt" data-find="keep" aria-pressed="true" title={T('find.keepCase')} aria-label={T('find.keepCase')} data-i18n-title="find.keepCase" data-i18n-aria="find.keepCase">AB</button>
+      </div>
+      <button type="button" class="find-act" data-find="replace" title={T('find.replaceTip')} data-i18n-title="find.replaceTip"><span data-i18n="find.replace">{T('find.replace')}</span></button>
+      <button type="button" class="find-act" data-find="replace-all" title={T('find.replaceAllTip')} data-i18n-title="find.replaceAllTip"><span data-i18n="find.replaceAll">{T('find.replaceAll')}</span></button>
+    </div>
+  </div>
+</div>

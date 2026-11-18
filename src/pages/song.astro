@@ -1,12 +1,14 @@
 ---
 import '../styles/global.css';
 import '../styles/song.css';
+import '../styles/find.css';
 import '@fontsource/caveat/latin-500.css';
 import '@fontsource/caveat/latin-600.css';
 import HeadBoot from '../components/HeadBoot.astro';
 import Logo from '../components/Logo.astro';
 import ThemeSwitch from '../components/ThemeSwitch.astro';
 import Loader from '../components/Loader.astro';
+import FindBar from '../components/FindBar.astro';
 import { en_ as T, type Key } from '../scripts/i18n';
 import { SECTION_KINDS } from '../scripts/song';
 
@@ -57,6 +59,9 @@ const menus: { id: string; key: Key; items: Item[] }[] = [
     items: [
       { key: 'm.undo', action: 'undo', kbd: 'Ctrl+Z' },
       { key: 'm.redo', action: 'redo', kbd: 'Ctrl+Y' },
+      'sep',
+      { key: 'm.find', action: 'find', kbd: 'Ctrl+F' },
+      { key: 'm.replace', action: 'replace', kbd: 'Ctrl+H' },
       'sep',
       { key: 'mus.mMoveLineUp', action: 'line-up', kbd: 'Alt+↑' },
       { key: 'mus.mMoveLineDown', action: 'line-down', kbd: 'Alt+↓' },
@@ -196,7 +201,9 @@ const menus: { id: string; key: Key; items: Item[] }[] = [
       <button type="button" class="sg-tool sg-icon" data-act="help" title={T('help.title')} aria-label={T('help.title')} data-i18n-title="help.title" data-i18n-aria="help.title" set:html={ICON.help} />
     </div>
 
-    <div class="sg-body flex flex-1 min-h-0">
+    <div class="sg-body flex flex-1 min-h-0 relative">
+      <!-- Find & replace in the lyrics (Ctrl+F / Ctrl+H), the same bar as in the screenplay editor -->
+      <FindBar />
       <!-- Song details, structure, chords used, stats -->
       <aside class="sidebar sg-side" aria-label={T('song.details')} data-i18n-aria="song.details">
         <div class="sg-side-scroll">
@@ -247,7 +254,15 @@ const menus: { id: string; key: Key; items: Item[] }[] = [
           <section class="sg-panel">
             <h2 class="sg-panel-title" data-i18n="song.details">{T('song.details')}</h2>
             <div class="sg-meta">
-              <label class="sg-meta-wide"><span data-i18n="song.writer">{T('song.writer')}</span><input class="text-input" data-meta="writer" placeholder=" " autocomplete="off" spellcheck="false" /></label>
+              <!-- Credits: everyone who worked on the song, each with a role (song-app.ts) -->
+              <div class="sg-meta-wide sg-credits">
+                <span class="sg-credits-title" data-i18n="cred.title">{T('cred.title')}</span>
+                <div id="sg-credits" class="sg-credit-list"></div>
+                <button type="button" class="sg-tool sg-credit-add" data-credit-add>
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg>
+                  <span data-i18n="cred.add">{T('cred.add')}</span>
+                </button>
+              </div>
               <label><span data-i18n="song.key">{T('song.key')}</span><input class="text-input" data-meta="key" placeholder="G" autocomplete="off" spellcheck="false" maxlength="12" /></label>
               <label><span>BPM</span><input class="text-input" data-meta="bpm" placeholder="90" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
               <label><span data-i18n="song.time">{T('song.time')}</span><input class="text-input" data-meta="time" placeholder="4/4" autocomplete="off" maxlength="8" /></label>
@@ -358,6 +373,7 @@ const menus: { id: string; key: Key; items: Item[] }[] = [
               ['song.hMoveLine', 'Alt+↑ / Alt+↓'],
               ['song.hAddSection', 'Alt+1 … Alt+8'],
               ['mus.hNote', 'Alt+N'],
+              ['help.find', 'Ctrl+F / Ctrl+H'],
               ['help.undo', 'Ctrl+Z / Ctrl+Y'],
               ['help.save', 'Ctrl+S / Ctrl+Shift+S'],
               ['song.export', 'Ctrl+Shift+E'],

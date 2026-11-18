@@ -31,6 +31,14 @@ interface Match {
 const escRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 const before = (a: { b: number; s: number }, b: { b: number; s: number }) => a.b < b.b || (a.b === b.b && a.s < b.s);
 
+/** The search as a regex (null for an empty search); shared with the song editor's find bar. */
+export function searchRegex(query: string, matchCase: boolean, wholeWord: boolean): RegExp | null {
+  if (!query) return null;
+  const body = escRe(query);
+  const src = wholeWord ? `(?<![\\p{L}\\p{N}_])${body}(?![\\p{L}\\p{N}_])` : body;
+  return new RegExp(src, matchCase ? 'gu' : 'giu');
+}
+
 export function initFind(ctx: FindCtx) {
   const { editor, editorEl, scroller } = ctx;
   const bar = document.querySelector<HTMLElement>('#find-bar')!;
@@ -54,13 +62,7 @@ export function initFind(ctx: FindCtx) {
 
   const isOpen = () => !bar.hidden;
 
-  function regex(): RegExp | null {
-    const q = input.value;
-    if (!q) return null;
-    const body = escRe(q);
-    const src = wholeWord ? `(?<![\\p{L}\\p{N}_])${body}(?![\\p{L}\\p{N}_])` : body;
-    return new RegExp(src, matchCase ? 'gu' : 'giu');
-  }
+  const regex = () => searchRegex(input.value, matchCase, wholeWord);
 
   /** Find every match and paint it; keeps the current match near `anchor`. */
   function refresh(scroll = false) {

@@ -3598,7 +3598,7 @@ dependencies = [
 
 [[package]]
 name = "terra-script"
-version = "1.0.4"
+version = "1.0.41"
 dependencies = [
  "log",
  "serde",
