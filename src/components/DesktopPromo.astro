@@ -1,0 +1,32 @@
+---
+/**
+ * "Get the desktop app" callout, web only (see scripts/desktop-promo.ts).
+ * banner: on the project list, can be hidden for good. inline: inside dialogs.
+ */
+import { en_ as T } from '../scripts/i18n';
+import { DESKTOP_APP_URL } from '../scripts/desktop-promo';
+
+interface Props {
+  variant?: 'banner' | 'inline';
+}
+const { variant = 'inline' } = Astro.props;
+const banner = variant === 'banner';
+---
+
+<div class={`desktop-promo desktop-promo-${variant}`} data-web-only data-dismissible={banner ? '1' : undefined} hidden>
+  <span class="desktop-promo-icon" aria-hidden="true">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/><path d="M12 7.5v6"/><path d="m9.5 11 2.5 2.5 2.5-2.5"/></svg>
+  </span>
+  <div class="desktop-promo-text">
+    <b data-i18n="promo.title">{T('promo.title')}</b>
+    <span data-i18n="promo.body">{T('promo.body')}</span>
+    <span class="text-muted" data-i18n="promo.move">{T('promo.move')}</span>
+  </div>
+  <div class="desktop-promo-actions">
+    <a class="btn btn-primary btn-icon" href={DESKTOP_APP_URL} download>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+      <span data-i18n="promo.download">{T('promo.download')}</span>
+    </a>
+    {banner && <button type="button" class="link-btn" data-promo-dismiss data-i18n="promo.dismiss">{T('promo.dismiss')}</button>}
+  </div>
+</div>

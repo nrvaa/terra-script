@@ -5,6 +5,19 @@
  * drawings (kept out of the document so undo and snapshots stay light).
  */
 import { normalizeTitlePage, parseFountain } from './fountain';
+import {
+  albumStats,
+  asTrack,
+  fileImages,
+  isAlbumFile,
+  isSongFile,
+  parseAlbum,
+  parseSong,
+  songStats,
+  type AlbumDoc,
+  type InlineImages,
+  type SongDoc,
+} from './song';
 import { layoutScript } from './pdf';
 import { parseProduction, productionImageIds } from './production-data';
 import {
@@ -52,7 +65,22 @@ export interface ProjectMeta {
   backedUpAt?: number;
   /** false = the user turned backup reminders off for this project. */
   remindBackup?: boolean;
+  /** 'song' (a single) or 'album' (an album or EP) for songwriting projects; none = screenplay. */
+  kind?: 'song' | 'album';
+  /** Songs and albums. */
+  sections?: number;
+  lines?: number;
+  /** Albums only. */
+  tracks?: number;
+  albumType?: 'album' | 'ep';
+  /** Songs and albums: the cover art's image id (shown on the project card). */
+  cover?: string;
 }
+
+export const isSong = (m: Pick<ProjectMeta, 'kind'>) => m.kind === 'song';
+export const isAlbum = (m: Pick<ProjectMeta, 'kind'>) => m.kind === 'album';
+/** Anything the song editor opens: singles and albums. */
+export const isMusic = (m: Pick<ProjectMeta, 'kind'>) => isSong(m) || isAlbum(m);
 
 const DB_NAME = 'tewrite';
 const DB_VERSION = 4; // 2: snapshots store, 3: storyboard images, 4: repair a v3 without the images store
@@ -176,7 +204,8 @@ export async function loadProject(id: string): Promise<{ meta: ProjectMeta; doc:
     request(tx.objectStore('projects').get(id) as IDBRequest<ProjectMeta | undefined>),
     request(tx.objectStore('scripts').get(id) as IDBRequest<{ id: string; doc: ScriptDoc } | undefined>),
   ]);
-  if (!meta || !row) return null;
+  // Songs share the stores but have no script document.
+  if (!meta || !row?.doc || isSong(meta)) return null;
   return { meta, doc: row.doc };
 }
 
@@ -230,7 +259,141 @@ export async function deleteProject(id: string): Promise<void> {
   }
 }
 
+/* ------------------------------------------------------------------ */
+/* Songs: same stores, meta marked kind: 'song'                        */
+/* ------------------------------------------------------------------ */
+
+export async function loadSong(id: string): Promise<{ meta: ProjectMeta; doc: SongDoc } | null> {
+  const db = await openDb();
+  const tx = db.transaction(['projects', 'scripts'], 'readonly');
+  const [meta, row] = await Promise.all([
+    request(tx.objectStore('projects').get(id) as IDBRequest<ProjectMeta | undefined>),
+    request(tx.objectStore('scripts').get(id) as IDBRequest<{ id: string; song?: SongDoc } | undefined>),
+  ]);
+  if (!meta || !row?.song || !isSong(meta)) return null;
+  return { meta, doc: row.song };
+}
+
+export async function saveSong(id: string, doc: SongDoc, opts: { touch?: boolean } = {}): Promise<ProjectMeta> {
+  const db = await openDb();
+  const tx = db.transaction(['projects', 'scripts'], 'readwrite');
+  const projects = tx.objectStore('projects');
+  const existing = await request(projects.get(id) as IDBRequest<ProjectMeta | undefined>);
+  const now = Date.now();
+  const stats = songStats(doc);
+  const meta: ProjectMeta = {
+    id,
+    kind: 'song',
+    title: doc.title.trim(),
+    author: doc.writer.trim(),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: opts.touch === false && existing ? existing.updatedAt : now,
+    pages: 0,
+    scenes: 0,
+    characters: 0,
+    words: stats.words,
+    sections: stats.sections,
+    lines: stats.lines,
+    ...(doc.cover ? { cover: doc.cover } : {}),
+    ...(existing?.backedUpAt ? { backedUpAt: existing.backedUpAt } : {}),
+    ...(existing?.remindBackup === false ? { remindBackup: false } : {}),
+  };
+  projects.put(meta);
+  tx.objectStore('scripts').put({ id, song: doc });
+  await done(tx);
+  return meta;
+}
+
+export async function createSong(doc: SongDoc): Promise<string> {
+  const id = newId();
+  await saveSong(id, doc);
+  return id;
+}
+
+export const songUrl = (id: string) => `/song/?p=${encodeURIComponent(id)}`;
+export const projectUrl = (m: Pick<ProjectMeta, 'id' | 'kind'>) => (isMusic(m) ? songUrl(m.id) : editorUrl(m.id));
+
+export async function loadAlbum(id: string): Promise<{ meta: ProjectMeta; doc: AlbumDoc } | null> {
+  const db = await openDb();
+  const tx = db.transaction(['projects', 'scripts'], 'readonly');
+  const [meta, row] = await Promise.all([
+    request(tx.objectStore('projects').get(id) as IDBRequest<ProjectMeta | undefined>),
+    request(tx.objectStore('scripts').get(id) as IDBRequest<{ id: string; album?: AlbumDoc } | undefined>),
+  ]);
+  if (!meta || !row?.album || !isAlbum(meta)) return null;
+  return { meta, doc: row.album };
+}
+
+export async function saveAlbum(id: string, doc: AlbumDoc, opts: { touch?: boolean } = {}): Promise<ProjectMeta> {
+  const db = await openDb();
+  const tx = db.transaction(['projects', 'scripts'], 'readwrite');
+  const projects = tx.objectStore('projects');
+  const existing = await request(projects.get(id) as IDBRequest<ProjectMeta | undefined>);
+  const now = Date.now();
+  const stats = albumStats(doc);
+  const meta: ProjectMeta = {
+    id,
+    kind: 'album',
+    albumType: doc.type,
+    title: doc.title.trim(),
+    author: doc.artist.trim(),
+    createdAt: existing?.createdAt ?? now,
+    updatedAt: opts.touch === false && existing ? existing.updatedAt : now,
+    pages: 0,
+    scenes: 0,
+    characters: 0,
+    words: stats.words,
+    lines: stats.lines,
+    tracks: stats.tracks,
+    ...(doc.cover ? { cover: doc.cover } : {}),
+    ...(existing?.backedUpAt ? { backedUpAt: existing.backedUpAt } : {}),
+    ...(existing?.remindBackup === false ? { remindBackup: false } : {}),
+  };
+  projects.put(meta);
+  tx.objectStore('scripts').put({ id, album: doc });
+  await done(tx);
+  return meta;
+}
+
+export async function createAlbum(doc: AlbumDoc): Promise<string> {
+  const id = newId();
+  await saveAlbum(id, doc);
+  return id;
+}
+
+/**
+ * Put singles into an album as new tracks (copies). With `move`, the singles
+ * are deleted afterwards, so each song lives only in the album.
+ */
+export async function addSongsToAlbum(albumId: string, songIds: string[], move: boolean): Promise<number> {
+  const album = await loadAlbum(albumId);
+  if (!album) throw new Error('album');
+  let added = 0;
+  // An album that is still just one empty track gets its first real song in that place.
+  const blank = (t: SongDoc) => !t.title.trim() && songStats(t).words === 0;
+  for (const id of songIds) {
+    const s = await loadSong(id);
+    if (!s) continue;
+    if (album.doc.tracks.length === 1 && blank(album.doc.tracks[0])) album.doc.tracks = [];
+    album.doc.tracks.push(asTrack(s.doc));
+    added++;
+  }
+  await saveAlbum(albumId, album.doc);
+  if (move) for (const id of songIds) await deleteProject(id);
+  return added;
+}
+
 export async function renameProject(id: string, title: string): Promise<void> {
+  const song = await loadSong(id);
+  if (song) {
+    await saveSong(id, { ...song.doc, title });
+    return;
+  }
+  const album = await loadAlbum(id);
+  if (album) {
+    await saveAlbum(id, { ...album.doc, title });
+    return;
+  }
   const p = await loadProject(id);
   if (!p) return;
   p.doc.titlePage.title = title;
@@ -238,21 +401,56 @@ export async function renameProject(id: string, title: string): Promise<void> {
 }
 
 export async function duplicateProject(id: string, makeTitle: (t: string) => string): Promise<string | null> {
-  const p = await loadProject(id);
-  if (!p) return null;
-  const doc: ScriptDoc = structuredClone(p.doc);
-  doc.titlePage.title = makeTitle(doc.titlePage.title);
-  const copy = await createProject(doc);
-  // The copy gets its own storyboard drawings.
+  let copy: string;
+  const song = await loadSong(id);
+  const album = song ? null : await loadAlbum(id);
+  if (song) copy = await createSong({ ...structuredClone(song.doc), title: makeTitle(song.doc.title) });
+  else if (album) copy = await createAlbum({ ...structuredClone(album.doc), title: makeTitle(album.doc.title) });
+  else {
+    const p = await loadProject(id);
+    if (!p) return null;
+    const doc: ScriptDoc = structuredClone(p.doc);
+    doc.titlePage.title = makeTitle(doc.titlePage.title);
+    copy = await createProject(doc);
+  }
+  // The copy gets its own images (storyboard drawings, cover art).
+  await copyImages(id, copy);
+  return copy;
+}
+
+async function copyImages(from: string, to: string): Promise<void> {
   const db = await openDb();
   const read = db.transaction('images', 'readonly');
-  const rows = await request(read.objectStore('images').index('project').getAll(id) as IDBRequest<ImageRow[]>);
-  if (rows.length) {
-    const tx = db.transaction('images', 'readwrite');
-    for (const r of rows) tx.objectStore('images').put({ ...r, key: imageKey(copy, r.id), projectId: copy });
-    await done(tx);
+  const rows = await request(read.objectStore('images').index('project').getAll(from) as IDBRequest<ImageRow[]>);
+  if (!rows.length) return;
+  const tx = db.transaction('images', 'readwrite');
+  for (const r of rows) tx.objectStore('images').put({ ...r, key: imageKey(to, r.id), projectId: to });
+  await done(tx);
+}
+
+/** Images by id as data URLs (to put them inside a .terra file). */
+export async function imagesAsDataUrls(projectId: string, ids: (string | undefined)[]): Promise<InlineImages> {
+  const out: InlineImages = {};
+  for (const id of ids) {
+    if (!id) continue;
+    const blob = await getImage(projectId, id);
+    if (blob) out[id] = await blobToDataUrl(blob);
   }
-  return copy;
+  return out;
+}
+
+/** Store images that came inside a .terra file (only real png / jpeg / webp data URLs). */
+export async function storeImages(projectId: string, images: InlineImages): Promise<void> {
+  const entries = Object.entries(images).filter(([id, url]) => IMAGE_ID.test(id) && IMAGE_URL.test(url));
+  if (!entries.length) return;
+  const db = await openDb();
+  const tx = db.transaction('images', 'readwrite');
+  const now = Date.now();
+  for (const [id, url] of entries) {
+    const row: ImageRow = { key: imageKey(projectId, id), projectId, id, ...dataUrlBytes(url), at: now };
+    tx.objectStore('images').put(row);
+  }
+  await done(tx);
 }
 
 /* ------------------------------------------------------------------ */
@@ -665,11 +863,34 @@ export async function parseScriptFile(file: File): Promise<ScriptDoc> {
   return { version: 1, titlePage: normalizeTitlePage(parsed.titlePage), blocks: parsed.blocks };
 }
 
+/** Import a file as a new project; returns the URL to open it. */
 export async function importFile(file: File): Promise<string> {
-  const id = await createProject(await parseScriptFile(file));
+  let id: string;
+  let url: string;
+  const music = /\.(terra|tewrite|json)$/i.test(file.name) ? await readMusicFile(file) : null;
+  if (music?.song || music?.album) {
+    id = music.song ? await createSong(music.song) : await createAlbum(music.album!);
+    await storeImages(id, music.images);
+    url = songUrl(id);
+  } else {
+    id = await createProject(await parseScriptFile(file));
+    url = editorUrl(id);
+  }
   // Opening a .terra file means a backup already exists on disk.
   if (/\.(terra|tewrite)$/i.test(file.name)) await markBackedUp(id);
-  return id;
+  return url;
+}
+
+/** A .terra song or album file, or null for anything else (screenplays, other JSON). */
+async function readMusicFile(file: File): Promise<{ song?: SongDoc; album?: AlbumDoc; images: InlineImages } | null> {
+  try {
+    const raw = JSON.parse(await file.text());
+    if (isSongFile(raw)) return { song: parseSong(raw), images: fileImages(raw) };
+    if (isAlbumFile(raw)) return { album: parseAlbum(raw), images: fileImages(raw) };
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /* ------------------------------------------------------------------ */

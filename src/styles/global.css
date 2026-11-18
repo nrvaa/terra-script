@@ -42,7 +42,7 @@
 }
 
 /* Paper colour, independent of the app theme (View → Paper / status bar). */
-:root[data-paper="light"] :is(.paper, .thumb-page) {
+:root[data-paper="light"] :is(.paper, .thumb-page, .sg-paper) {
   --paper: #ffffff;
   --ink: #111111;
   --muted: #6b7385;
@@ -53,7 +53,7 @@
   --note-border: #e4c74a;
   --section: #6a2ed8;
 }
-:root[data-paper="dark"] :is(.paper, .thumb-page) {
+:root[data-paper="dark"] :is(.paper, .thumb-page, .sg-paper) {
   --paper: #1f232c;
   --ink: #e8e6e1;
   --muted: #8d95a7;
@@ -2581,3 +2581,236 @@ a.btn { display: inline-flex; align-items: center; justify-content: center; }
   opacity: 0.7;
 }
 .intro-skip:hover { opacity: 1; background: color-mix(in srgb, currentColor 10%, transparent); }
+
+/* "Get the desktop app" callout (web only, see scripts/desktop-promo.ts) */
+[data-web-only][hidden] { display: none !important; }
+.desktop-promo {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 12px;
+  background: var(--accent-soft);
+  font-size: 13px;
+  line-height: 1.45;
+}
+.desktop-promo-banner { margin-bottom: 20px; }
+.desktop-promo-icon { display: grid; place-items: center; flex: none; width: 38px; height: 38px; border-radius: 10px; background: var(--surface); color: var(--accent); }
+.desktop-promo-icon svg { width: 22px; height: 22px; }
+.desktop-promo-text { display: grid; gap: 2px; min-width: 0; flex: 1; }
+.desktop-promo-text b { font-size: 14px; }
+.desktop-promo-text .text-muted { font-size: 12px; }
+.desktop-promo-actions { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: none; }
+.desktop-promo-actions .btn { white-space: nowrap; text-decoration: none; }
+/* In a narrow dialog the button goes under the text. */
+.desktop-promo-inline { flex-wrap: wrap; }
+.desktop-promo-inline .desktop-promo-text { flex-basis: calc(100% - 52px); }
+.desktop-promo-inline .desktop-promo-actions { margin-left: 52px; }
+@media (max-width: 640px) {
+  .desktop-promo { flex-wrap: wrap; }
+  .desktop-promo-text { flex-basis: calc(100% - 52px); }
+  .desktop-promo-actions { margin-left: 52px; flex-direction: row; }
+}
+
+/* Projects: Screenplays / Songs tabs and the song card thumbnail */
+.proj-tabs { display: flex; gap: 4px; margin: -8px 0 20px; border-bottom: 1px solid var(--border); }
+.proj-tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-bottom: -1px;
+  padding: 9px 14px;
+  border-bottom: 2px solid transparent;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 600;
+}
+.proj-tab svg { width: 16px; height: 16px; }
+.proj-tab:hover { color: var(--text); }
+.proj-tab[aria-selected="true"] { color: var(--accent); border-bottom-color: var(--accent); }
+.proj-tab[aria-selected="true"] .pill { background: var(--accent-soft); color: var(--accent); }
+.thumb-song { align-items: flex-start; padding: 22px 16px 0; text-align: left; gap: 4px; }
+.thumb-song .thumb-title { text-decoration: none; margin-bottom: 0; }
+.thumb-note { font-size: 16px; line-height: 1; color: var(--accent); }
+.thumb-lyrics { display: grid; gap: 7px; width: 100%; margin-top: 10px; }
+.thumb-lyrics i { display: block; height: 4px; border-radius: 2px; background: color-mix(in srgb, var(--ink) 16%, transparent); }
+.thumb-lyrics i:nth-child(odd) { width: 38%; height: 3px; background: color-mix(in srgb, var(--accent) 45%, transparent); }
+.thumb-lyrics i:nth-child(2) { width: 86%; }
+.thumb-lyrics i:nth-child(4) { width: 70%; }
+
+/* ------------------------------------------------------------------ */
+/* Text fields — adapted from Uiverse.io by alexruix: a rounded outline */
+/* with the label inside that floats up onto the border on focus or     */
+/* once filled. In Terra colours (purple focus, theme-aware greys).     */
+/* ------------------------------------------------------------------ */
+/* (.dialog .text-input: beats the older ".dialog input" rule inside dialogs) */
+.text-input, .dialog .text-input {
+  --field-line: color-mix(in srgb, var(--muted) 70%, transparent);
+  border: 1.5px solid var(--field-line);
+  border-radius: 1rem;
+  background: none;
+  padding: 0.85rem 1rem;
+  font-size: 15px;
+  color: var(--text);
+  transition: border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+.text-input:focus, .dialog .text-input:focus { outline: none; border-color: var(--accent); }
+.text-input:not(select):not(:placeholder-shown) { border-color: color-mix(in srgb, var(--accent) 55%, var(--field-line)); }
+.text-input:not(select):focus, .dialog .text-input:not(select):focus { border-color: var(--accent); }
+
+/* The label sits inside the field… (settings rows keep their own layout) */
+label:not(.set-row):has(> .text-input) { position: relative; }
+label:not(.set-row):has(> .text-input) > span:first-child {
+  position: absolute;
+  left: 15px;
+  top: 50%;
+  z-index: 1;
+  max-width: calc(100% - 30px);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--muted);
+  font-size: 14px;
+  font-weight: 400;
+  line-height: 1.2;
+  pointer-events: none;
+  transform: translateY(-50%);
+  transform-origin: left center;
+  transition: 150ms cubic-bezier(0.4, 0, 0.2, 1);
+}
+/* …and floats onto the border when the field has focus or a value (a select always has one). */
+label:not(.set-row):has(> input.text-input:focus) > span:first-child,
+label:not(.set-row):has(> input.text-input:not(:placeholder-shown)) > span:first-child,
+label:not(.set-row):has(> select.text-input) > span:first-child {
+  top: 0;
+  max-width: none;
+  padding: 0 0.2em;
+  background-color: var(--field-bg, var(--surface));
+  transform: translateY(-50%) scale(0.8);
+}
+label:not(.set-row):has(> .text-input:focus) > span:first-child { color: var(--accent); }
+/* Hints show only once the label has moved out of the way. */
+label:not(.set-row):has(> input.text-input) > input::placeholder { color: transparent; }
+label:not(.set-row):has(> input.text-input) > input:focus::placeholder { color: var(--muted); }
+
+/* ------------------------------------------------------------------ */
+/* Dropdowns: a light version of the primary button — the purple shine */
+/* sweeps across and the box gives a small wobble on hover.             */
+/* ------------------------------------------------------------------ */
+:is(select.text-input, .field-select), .dialog select.text-input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 2.4rem;
+  cursor: pointer;
+  background-image:
+    linear-gradient(115deg, transparent 42%, color-mix(in srgb, var(--accent) 26%, transparent) 50%, transparent 58%),
+    linear-gradient(45deg, transparent 50%, currentColor 50%),
+    linear-gradient(135deg, currentColor 50%, transparent 50%);
+  background-size: 260% 100%, 5px 5px, 5px 5px;
+  background-position: 130% 0, calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+  background-repeat: no-repeat;
+  transition: border-color 0.2s, background-position 0.6s cubic-bezier(0.19, 1, 0.22, 1);
+}
+:is(select.text-input, .field-select):hover, .dialog select.text-input:hover {
+  border-color: var(--accent);
+  background-position: -30% 0, calc(100% - 18px) 55%, calc(100% - 13px) 55%;
+  animation: select-wobble 0.5s ease-in-out;
+}
+:is(select.text-input, .field-select):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:is(select.text-input, .field-select) option { background: var(--surface); color: var(--text); }
+@keyframes select-wobble {
+  25% { transform: rotate(1deg); }
+  50% { transform: rotate(-1deg); }
+  75% { transform: rotate(0.4deg); }
+}
+@media (prefers-reduced-motion: reduce) {
+  :is(select.text-input, .field-select):hover { animation: none; }
+}
+
+/* Songwriting dialogs (music-dialogs.ts): single / album / EP, pick an album, pick singles */
+.kind-cards { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; }
+@media (max-width: 560px) { .kind-cards { grid-template-columns: 1fr; } }
+.dialog .kind-card {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  padding: 16px 14px;
+  border: 1.5px solid var(--border);
+  border-radius: 14px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s, transform 0.15s;
+}
+.dialog .kind-card:hover { border-color: color-mix(in srgb, var(--accent) 50%, var(--border)); transform: translateY(-1px); }
+.dialog .kind-card:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.kind-card input { position: absolute; opacity: 0; pointer-events: none; }
+.kind-card:has(input:focus-visible) { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kind-icon { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 11px; background: var(--surface-2); color: var(--accent); }
+.kind-card:has(input:checked) .kind-icon { background: var(--surface); }
+.kind-icon svg { width: 22px; height: 22px; }
+.kind-text { display: grid; gap: 3px; }
+.kind-text b { font-size: 15px; }
+.kind-text span { font-size: 12.5px; line-height: 1.45; color: var(--muted); font-weight: 400; }
+.pick-list { display: grid; gap: 4px; max-height: 300px; overflow-y: auto; padding: 2px; }
+.dialog .pick-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  font-size: 14px;
+  cursor: pointer;
+}
+.dialog .pick-row:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); }
+.pick-row input { width: 16px; height: 16px; accent-color: var(--accent); }
+.pick-main { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+.pick-sub { font-size: 12px; color: var(--muted); }
+/* The "new album" fields appear when "New album / EP" is chosen. */
+.pick-new { display: none; grid-template-columns: 1fr 130px; gap: 10px; padding: 12px 2px 4px; }
+.pick-list:has(input[name="album"][value=""]:checked) .pick-new { display: grid; }
+
+/* Project list: an album / EP card is a record sleeve with the disc sliding out. */
+.thumb-album { position: relative; height: 100%; display: flex; align-items: flex-end; }
+.thumb-sleeve {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  gap: 2px;
+  width: 132px;
+  height: 132px;
+  padding: 12px;
+  border-radius: 6px;
+  background: linear-gradient(140deg, #6a2ed8, #a78bfa 55%, #f0abfc);
+  color: #fff;
+  box-shadow: 0 6px 16px -6px rgb(40 18 90 / 0.5);
+  font-family: Inter, sans-serif;
+  text-align: left;
+}
+.thumb-album.is-ep .thumb-sleeve { background: linear-gradient(140deg, #0f766e, #2dd4bf 60%, #a5f3fc); }
+.thumb-sleeve .thumb-title { margin: 0; font-size: 12.5px; font-weight: 700; text-decoration: none; -webkit-line-clamp: 2; }
+.thumb-sleeve .thumb-title.is-empty { opacity: 0.75; font-style: normal; }
+.thumb-sleeve .thumb-author { font-size: 10.5px; opacity: 0.85; }
+.thumb-kind { position: absolute; top: 10px; left: 12px; font-size: 9.5px; font-weight: 700; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.85; }
+.thumb-disc {
+  position: absolute;
+  left: 58px;
+  bottom: 6px;
+  width: 120px;
+  height: 120px;
+  border-radius: 50%;
+  background: radial-gradient(circle, #f4f4f5 0 7%, #18181b 8% 30%, #27272a 31% 33%, #18181b 34% 100%);
+  box-shadow: 0 4px 12px -4px rgb(0 0 0 / 0.45);
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+.proj-card:hover .thumb-disc { transform: translateX(14px) rotate(40deg); }
+@media (prefers-reduced-motion: reduce) { .proj-card:hover .thumb-disc { transform: none; } }
+
+/* Project cards: cover art on the sleeve (singles with a cover use the sleeve too). */
+.thumb-cover { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.thumb-album.has-cover .thumb-sleeve > span { display: none; }

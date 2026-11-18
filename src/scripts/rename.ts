@@ -15,8 +15,11 @@ function titleCase(s: string) {
 }
 
 /** Write `to` in the same capitalisation style as the matched text. */
-function matchCase(found: string, to: string): string {
-  if (hasLetters(found) && found === found.toUpperCase()) return to.toUpperCase();
+export function matchCase(found: string, to: string): string {
+  if (!hasLetters(found)) return to;
+  // A single capital ("A", "I") reads as a capitalised word, not shouting.
+  if ((found.match(/\p{L}/gu) ?? []).length === 1 && found === found.toUpperCase()) return titleCase(to);
+  if (found === found.toUpperCase()) return to.toUpperCase();
   if (found === found.toLowerCase()) return to.toLowerCase();
   if (found === titleCase(found)) return titleCase(to);
   return to;

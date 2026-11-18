@@ -574,7 +574,7 @@ export function initFeatures(ctx: AppCtx) {
     const f = l.footer ?? DEFAULT_FOOTER;
     const slots = (name: string, v: string[]) =>
       `<div class="hf-slots">${['left', 'center', 'right']
-        .map((s, i) => `<label><span>${esc(t(`hf.${s}` as Key))}</span><input class="text-input" name="${name}${i}" value="${esc(v[i])}" autocomplete="off" spellcheck="false" /></label>`)
+        .map((s, i) => `<label><span>${esc(t(`hf.${s}` as Key))}</span><input class="text-input" name="${name}${i}" placeholder=" " value="${esc(v[i])}" autocomplete="off" spellcheck="false" /></label>`)
         .join('')}</div>`;
     d.innerHTML = `${head(t('m.headersFooters'))}
       <form class="grid gap-3" method="dialog">
@@ -615,8 +615,8 @@ export function initFeatures(ctx: AppCtx) {
       <form class="grid gap-1" method="dialog">
         ${toggle('more', t('mc.more'), t('mc.moreDesc'), l.more !== false)}
         <div class="mc-words">
-          <label><span>${esc(t('mc.moreWord'))}</span><input class="text-input" name="moreText" value="${esc(l.moreText ?? 'MORE')}" maxlength="20" /></label>
-          <label><span>${esc(t('mc.contdWord'))}</span><input class="text-input" name="contdText" value="${esc(l.contdText ?? "CONT'D")}" maxlength="20" /></label>
+          <label><span>${esc(t('mc.moreWord'))}</span><input class="text-input" name="moreText" placeholder=" " value="${esc(l.moreText ?? 'MORE')}" maxlength="20" /></label>
+          <label><span>${esc(t('mc.contdWord'))}</span><input class="text-input" name="contdText" placeholder=" " value="${esc(l.contdText ?? "CONT'D")}" maxlength="20" /></label>
         </div>
         ${toggle('autoContd', t('mc.autoContd'), t('mc.autoContdDesc'), l.autoContd !== false)}
         ${toggle('sceneContinueds', t('mc.sceneContinueds'), t('mc.sceneContinuedsDesc'), Boolean(l.sceneContinueds))}

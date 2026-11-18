@@ -1,7 +1,7 @@
 import { parseFountain, toFountain } from './fountain';
 import { t, type Key } from './i18n';
 import { parseTerra } from './projects';
-import { concatRuns, hasFlag, readRich, renderRich, shiftRuns, sliceRuns, toggleRange, type Flag } from './rich';
+import { concatRuns, expand, hasFlag, readRich, renderRich, shiftRuns, sliceRuns, toggleRange, type Flag } from './rich';
 import {
   EMPTY_ENTER,
   NEXT_ON_ENTER,
@@ -435,6 +435,41 @@ export class ScreenplayEditor {
     this.opts.onCaretMove?.(this.currentType(), this.currentIndex());
   }
 
+  /**
+   * Replace text ranges [s, e) in blocks (find & replace) as one undo step.
+   * Each replacement takes the formatting of the first character it replaces.
+   * Doesn't move the selection (focus may be in the find bar).
+   */
+  replaceRanges(edits: { b: number; s: number; e: number; text: string }[]) {
+    if (!edits.length) return;
+    this.flush();
+    const els = this.els();
+    const byBlock = new Map<number, typeof edits>();
+    for (const ed of edits) {
+      if (!els[ed.b]) continue;
+      if (!byBlock.has(ed.b)) byBlock.set(ed.b, []);
+      byBlock.get(ed.b)!.push(ed);
+    }
+    // Undo puts the caret after the last replacement (allowing for earlier ones in its block).
+    const last = edits[edits.length - 1];
+    let o = last.s + last.text.length;
+    for (const ed of byBlock.get(last.b) ?? []) if (ed.s < last.s) o += ed.text.length - (ed.e - ed.s);
+    for (const [b, list] of byBlock) {
+      let { text, fmt } = readRich(els[b]);
+      // Right to left, so earlier offsets stay valid.
+      for (const ed of [...list].sort((x, y) => y.s - x.s)) {
+        const rep = ed.text.replace(/\n/g, ' ');
+        const flags = expand(text.length, fmt)[ed.s] ?? '';
+        const mid: Run[] | undefined = rep && flags ? [[0, rep.length, flags]] : undefined;
+        const head = concatRuns(sliceRuns(fmt, 0, ed.s), ed.s, mid);
+        fmt = concatRuns(head, ed.s + rep.length, sliceRuns(fmt, ed.e, text.length));
+        text = text.slice(0, ed.s) + rep + text.slice(ed.e);
+      }
+      this.setText(els[b], text, fmt);
+    }
+    this.commit(els[last.b] ? { b: last.b, o } : undefined);
+  }
+
   /** Commit pending typing into history now. */
   flush() {
     if (this.pending) this.commit();
@@ -618,10 +653,10 @@ export class ScreenplayEditor {
     this.hIndex = this.history.length - 1;
   }
 
-  private commit() {
+  private commit(caret?: Caret) {
     window.clearTimeout(this.typingTimer);
     this.pending = false;
-    const state: HistoryState = { blocks: this.getBlocks(), caret: this.getCaret() };
+    const state: HistoryState = { blocks: this.getBlocks(), caret: caret ?? this.getCaret() };
     const prev = this.history[this.hIndex];
     if (prev && JSON.stringify(prev.blocks) === JSON.stringify(state.blocks)) {
       prev.caret = state.caret;

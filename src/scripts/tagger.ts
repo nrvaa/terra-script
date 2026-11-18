@@ -20,8 +20,16 @@ function registry(): HighlightRegistry | null {
   return css?.highlights && typeof Highlight !== 'undefined' ? css.highlights : null;
 }
 
+/** Paint `ranges` as the named CSS highlight (none: remove it). No-op without the Highlight API. */
+export function paintHighlight(name: string, ranges: Range[]) {
+  const reg = registry();
+  if (!reg) return;
+  if (ranges.length) reg.set(name, new Highlight!(...ranges));
+  else reg.delete(name);
+}
+
 /** Text of a block element with a way back from text offsets to DOM positions. */
-function textIndex(el: HTMLElement) {
+export function textIndex(el: HTMLElement) {
   const nodes: { node: Text; start: number }[] = [];
   let text = '';
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);

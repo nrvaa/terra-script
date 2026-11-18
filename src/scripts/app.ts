@@ -8,6 +8,8 @@ import { hideLoader, initThemeSwitches, syncThemeSwitches, themeTransition } fro
 import { buildReport, characterStats, reportToText } from './report';
 import { createCardsBoard } from './cards';
 import { renameCharacter } from './rename';
+import { initFind } from './find';
+import { DESKTOP_APP_URL, initDesktopPromo } from './desktop-promo';
 import { createTakesPanel } from './takes';
 import { createStoryboard, panelLabel } from './storyboard';
 import { createProduction } from './production';
@@ -21,6 +23,9 @@ import {
   getImage,
   importFile,
   loadProject,
+  loadAlbum,
+  loadSong,
+  songUrl,
   markBackedUp,
   migrateLegacy,
   newId,
@@ -295,6 +300,13 @@ const ctx: AppCtx = {
   locale: () => locale(),
 };
 const features = initFeatures(ctx);
+const finder = initFind({
+  editor,
+  editorEl,
+  scroller: $('main.desk'),
+  showScript: () => settings.view !== 'script' && setView('script'),
+  toast: (msg) => toast(msg),
+});
 
 /** Paper size / scene numbers belong to the script: save them with it. */
 function layoutChanged() {
@@ -1154,17 +1166,17 @@ fileInput.addEventListener('change', async () => {
   const file = fileInput.files?.[0];
   fileInput.value = '';
   if (!file) return;
-  let id: string;
+  let url: string;
   if (/\.pdf$/i.test(file.name)) toast(t('toast.reading', { file: file.name }));
   try {
-    id = await importFile(file);
+    url = await importFile(file);
   } catch (err) {
     console.error(err);
     toast(t((err as Error)?.name === 'PdfNoTextError' ? 'toast.pdfNoText' : 'toast.badFile'));
     return;
   }
   await saveNow();
-  location.href = editorUrl(id);
+  location.href = url;
 });
 
 async function newScript() {
@@ -1471,6 +1483,9 @@ const actions: Record<string, () => void> = {
   'paper-a4': () => ((settings.paper = 'a4'), layoutChanged()),
   takes: toggleTakes,
   'rename-char': () => openRenameChar(),
+  'desktop-app': () => (location.href = DESKTOP_APP_URL),
+  find: () => finder.open(),
+  replace: () => finder.open(true),
   'view-script': () => setView('script'),
   'view-cards': () => setView('cards'),
   'view-board': () => setView('board'),
@@ -1580,8 +1595,18 @@ document.addEventListener('keydown', (e) => {
       return;
     }
   }
+  if (e.key === 'F3' && !mod && !e.altKey) {
+    e.preventDefault();
+    e.shiftKey ? finder.prev() : finder.next();
+    return;
+  }
   if (!mod || e.altKey) return;
   const k = e.key.toLowerCase();
+  if ((k === 'f' || k === 'h') && !e.shiftKey) {
+    e.preventDefault();
+    finder.open(k === 'h');
+    return;
+  }
   // In card view the editor isn't focused, so handle undo/redo here
   // (text fields inside cards keep their own native undo).
   if (e.key === '\\') {
@@ -1656,6 +1681,7 @@ $('.home-link').addEventListener('click', (e) => {
 
 async function boot() {
   applyLanguage(settings.lang);
+  initDesktopPromo();
   setSidebarTab(settings.sidebarTab);
   if (!projectId) {
     location.replace('/projects');
@@ -1665,7 +1691,9 @@ async function boot() {
     await migrateLegacy();
     const p = await loadProject(projectId);
     if (!p) {
-      location.replace('/projects?missing=1');
+      // A song opened with a script link goes to the song editor.
+      const music = (await loadSong(projectId)) ?? (await loadAlbum(projectId));
+      location.replace(music ? songUrl(projectId) : '/projects?missing=1');
       return;
     }
     const unsaved = takeUnsaved(projectId, p.meta.updatedAt);

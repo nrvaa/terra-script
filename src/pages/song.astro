@@ -1,0 +1,393 @@
+---
+import '../styles/global.css';
+import '../styles/song.css';
+import '@fontsource/caveat/latin-500.css';
+import '@fontsource/caveat/latin-600.css';
+import HeadBoot from '../components/HeadBoot.astro';
+import Logo from '../components/Logo.astro';
+import ThemeSwitch from '../components/ThemeSwitch.astro';
+import Loader from '../components/Loader.astro';
+import { en_ as T, type Key } from '../scripts/i18n';
+import { SECTION_KINDS } from '../scripts/song';
+
+const svg = (paths: string) =>
+  `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths}</svg>`;
+const ICON = {
+  repeat: svg('<path d="m17 2 4 4-4 4"/><path d="M3 11v-1a4 4 0 0 1 4-4h14"/><path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>'),
+  chords: svg('<path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/>'),
+  down: svg('<path d="M5 12h14"/>'),
+  up: svg('<path d="M12 5v14M5 12h14"/>'),
+  undo: svg('<path d="M9 14 4 9l5-5"/><path d="M4 9h11a5 5 0 0 1 0 10h-1"/>'),
+  redo: svg('<path d="m15 14 5-5-5-5"/><path d="M20 9H9a5 5 0 0 0 0 10h1"/>'),
+  export: svg('<path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>'),
+  print: svg('<path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8" rx="1"/>'),
+  help: svg('<circle cx="12" cy="12" r="10"/><path d="M9.1 9a3 3 0 0 1 5.8 1c0 2-3 3-3 3"/><path d="M12 17h.01"/>'),
+  note: svg('<path d="M15.5 3H5a2 2 0 0 0-2 2v14c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2V8.5z"/><path d="M15 3v6h6"/>'),
+  disc: svg('<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="2.5"/>'),
+};
+
+/* Menus, like the screenplay editor's, with the songwriting commands.
+   only: 'single' / 'album' items show only in that kind of project. */
+type Item = { key: Key; action: string; kbd?: string; check?: string; raw?: string; only?: 'single' | 'album' } | 'sep';
+const menus: { id: string; key: Key; items: Item[] }[] = [
+  {
+    id: 'file',
+    key: 'menu.file',
+    items: [
+      { key: 'm.projects', action: 'projects' },
+      { key: 'mus.mNewSingle', action: 'new-single' },
+      { key: 'mus.mNewAlbum', action: 'new-album' },
+      'sep',
+      { key: 'mus.mImport', action: 'import', kbd: 'Ctrl+O' },
+      { key: 'm.saveTerra', action: 'save-terra', kbd: 'Ctrl+Shift+S' },
+      { key: 'song.export', action: 'export', kbd: 'Ctrl+Shift+E' },
+      { key: 'm.print', action: 'print', kbd: 'Ctrl+P' },
+      'sep',
+      { key: 'cov.mPick', action: 'cover-pick' },
+      { key: 'cov.mMockup', action: 'cover-mockup' },
+      'sep',
+      { key: 'mus.toAlbum', action: 'to-album', only: 'single' },
+      { key: 'mus.mAddSingles', action: 'add-singles', only: 'album' },
+      { key: 'mus.mTrackToSingle', action: 'track-to-single', only: 'album' },
+    ],
+  },
+  {
+    id: 'edit',
+    key: 'menu.edit',
+    items: [
+      { key: 'm.undo', action: 'undo', kbd: 'Ctrl+Z' },
+      { key: 'm.redo', action: 'redo', kbd: 'Ctrl+Y' },
+      'sep',
+      { key: 'mus.mMoveLineUp', action: 'line-up', kbd: 'Alt+↑' },
+      { key: 'mus.mMoveLineDown', action: 'line-down', kbd: 'Alt+↓' },
+      'sep',
+      { key: 'song.duplicate', action: 'dup-section' },
+      { key: 'song.delete', action: 'del-section' },
+      { key: 'mus.mDelTrack', action: 'del-track', only: 'album' },
+    ],
+  },
+  {
+    id: 'insert',
+    key: 'menu.insert',
+    items: [
+      ...SECTION_KINDS.map((k) => ({ key: 'song.add' as Key, raw: k.label, action: `add-${k.kind}`, kbd: `Alt+${k.key}` })),
+      'sep' as const,
+      { key: 'song.repeatChorus', action: 'repeat-chorus' },
+      'sep' as const,
+      { key: 'mus.mNote', action: 'add-note', kbd: 'Alt+N' },
+      { key: 'mus.mNewTrack', action: 'new-track', only: 'album' as const },
+    ],
+  },
+  {
+    id: 'view',
+    key: 'menu.view',
+    items: [
+      { key: 'song.chords', action: 'toggle-chords', check: 'chords' },
+      { key: 'mus.mNotes', action: 'toggle-notes', check: 'notes' },
+      { key: 'mus.mScroll', action: 'toggle-scroll', check: 'scroll', only: 'album' },
+      { key: 'm.sidebar', action: 'toggle-sidebar', check: 'sidebar', kbd: 'Ctrl+\\' },
+      'sep',
+      { key: 'm.zoomIn', action: 'zoom-in', kbd: 'Ctrl+=' },
+      { key: 'm.zoomOut', action: 'zoom-out', kbd: 'Ctrl+-' },
+      { key: 'm.zoomReset', action: 'zoom-reset' },
+      'sep',
+      { key: 'm.themeLight', action: 'theme-light', check: 'theme=light' },
+      { key: 'm.themeDark', action: 'theme-dark', check: 'theme=dark' },
+      { key: 'm.themeSystem', action: 'theme-system', check: 'theme=system' },
+      'sep',
+      { key: 'm.paperAuto', action: 'paper-color-auto', check: 'paperColor=auto' },
+      { key: 'm.paperLight', action: 'paper-color-light', check: 'paperColor=light' },
+      { key: 'm.paperDark', action: 'paper-color-dark', check: 'paperColor=dark' },
+      'sep',
+      { key: 'm.langEn', action: 'lang-en', check: 'lang=en' },
+      { key: 'm.langId', action: 'lang-id', check: 'lang=id' },
+    ],
+  },
+  {
+    id: 'tools',
+    key: 'menu.tools',
+    items: [
+      { key: 'song.transposeUp', action: 'transpose-up' },
+      { key: 'song.transposeDown', action: 'transpose-down' },
+      'sep',
+      { key: 'mus.mLyricsId', action: 'lyrics-id', check: 'lyrics=id' },
+      { key: 'mus.mLyricsEn', action: 'lyrics-en', check: 'lyrics=en' },
+    ],
+  },
+  {
+    id: 'help',
+    key: 'menu.help',
+    items: [{ key: 'm.shortcuts', action: 'shortcuts', kbd: 'Ctrl+/' }],
+  },
+];
+---
+
+<html lang="en">
+  <head>
+    <HeadBoot title={T('song.pageTitle')} />
+    <style id="page-style" is:inline>@page { size: letter; }</style>
+  </head>
+  <body class="app song-app h-screen flex flex-col overflow-hidden">
+    <Loader label={T('ui.loading')} />
+
+    <header class="topbar shrink-0">
+      <div class="flex items-center gap-3 px-3 h-11">
+        <a href="/projects?tab=song" class="home-link shrink-0" title={T('ui.allProjects')} data-i18n-title="ui.allProjects">
+          <Logo id="hdr" class="brand-logo" />
+        </a>
+        <span class="sg-badge" id="sg-badge"><span set:html={ICON.chords} /><span id="sg-badge-text" data-i18n="song.mode">{T('song.mode')}</span></span>
+        <!-- The song's title, or the album's in an album (song-app.ts sets the placeholder and label). -->
+        <input id="song-title" class="doc-title" placeholder={T('song.titlePh')} aria-label={T('song.titlePh')} autocomplete="off" spellcheck="false" />
+        <span id="save-status" class="text-muted text-xs ml-auto whitespace-nowrap hidden sm:inline" aria-live="polite"></span>
+        <ThemeSwitch label={T('proj.theme')} />
+      </div>
+      <nav class="menubar" aria-label={T('ui.mainMenu')} data-i18n-aria="ui.mainMenu">
+        {menus.map((m) => (
+          <div class="menu" data-menu={m.id}>
+            <button type="button" class="menu-btn" data-menu-btn aria-haspopup="true" aria-expanded="false" data-i18n={m.key}>{T(m.key)}</button>
+            <div class="menu-pop" role="menu">
+              {m.items.map((it) =>
+                it === 'sep' ? (
+                  <div class="menu-sep" role="separator" />
+                ) : (
+                  <button type="button" class="menu-item" role={it.check ? 'menuitemcheckbox' : 'menuitem'} data-action={it.action} data-check={it.check} data-only={it.only} hidden={!!it.only}>
+                    <span class="menu-check" aria-hidden="true">✓</span>
+                    {it.raw ? <span class="flex-1">{it.raw}</span> : <span class="flex-1" data-i18n={it.key}>{T(it.key)}</span>}
+                    {it.kbd && <kbd>{it.kbd}</kbd>}
+                  </button>
+                ),
+              )}
+            </div>
+          </div>
+        ))}
+      </nav>
+    </header>
+
+    <!-- Section buttons, repeat, chords, transpose, history, export -->
+    <div class="sg-toolbar shrink-0" role="toolbar" aria-label={T('song.toolbar')} data-i18n-aria="song.toolbar">
+      <div class="sg-tool-group" role="group" aria-label={T('song.addSection')} data-i18n-aria="song.addSection">
+        <span class="sg-tool-cap" data-i18n="song.add">{T('song.add')}</span>
+        {SECTION_KINDS.map((k) => (
+          <button type="button" class="sg-tool sg-kind-btn" data-add={k.kind} data-kind={k.kind} title={`${k.label} (Alt+${k.key})`}>
+            <i class="sg-dot" aria-hidden="true"></i>{k.label}
+          </button>
+        ))}
+      </div>
+      <span class="sg-sep" aria-hidden="true"></span>
+      <button type="button" class="sg-tool" data-act="repeat" title={T('song.repeatChorusTip')} data-i18n-title="song.repeatChorusTip">
+        <span set:html={ICON.repeat} /><span data-i18n="song.repeatChorus">{T('song.repeatChorus')}</span>
+      </button>
+      <button type="button" class="sg-tool" data-act="chords" aria-pressed="true" title={T('song.chordsTip')} data-i18n-title="song.chordsTip">
+        <span set:html={ICON.chords} /><span data-i18n="song.chords">{T('song.chords')}</span>
+      </button>
+      <div class="sg-transpose" role="group" aria-label={T('song.transpose')} data-i18n-aria="song.transpose">
+        <button type="button" class="sg-tool sg-icon" data-act="down" title={T('song.transposeDown')} aria-label={T('song.transposeDown')} data-i18n-title="song.transposeDown" data-i18n-aria="song.transposeDown" set:html={ICON.down} />
+        <span class="sg-key" id="sg-key-view" title={T('song.transpose')} data-i18n-title="song.transpose">—</span>
+        <button type="button" class="sg-tool sg-icon" data-act="up" title={T('song.transposeUp')} aria-label={T('song.transposeUp')} data-i18n-title="song.transposeUp" data-i18n-aria="song.transposeUp" set:html={ICON.up} />
+      </div>
+      <span class="sg-sep" aria-hidden="true"></span>
+      <button type="button" class="sg-tool sg-icon" data-act="undo" title={T('m.undo') + ' (Ctrl+Z)'} aria-label={T('m.undo')} data-i18n-title="m.undo" data-title-suffix=" (Ctrl+Z)" data-i18n-aria="m.undo" set:html={ICON.undo} />
+      <button type="button" class="sg-tool sg-icon" data-act="redo" title={T('m.redo') + ' (Ctrl+Y)'} aria-label={T('m.redo')} data-i18n-title="m.redo" data-title-suffix=" (Ctrl+Y)" data-i18n-aria="m.redo" set:html={ICON.redo} />
+      <span class="sg-push"></span>
+      <button type="button" class="sg-tool" data-act="export" title={T('song.exportTip')} data-i18n-title="song.exportTip">
+        <span set:html={ICON.export} /><span data-i18n="song.export">{T('song.export')}</span>
+      </button>
+      <button type="button" class="sg-tool sg-icon" data-act="print" title={T('m.print') + ' (Ctrl+P)'} aria-label={T('m.print')} data-i18n-title="m.print" data-title-suffix=" (Ctrl+P)" data-i18n-aria="m.print" set:html={ICON.print} />
+      <button type="button" class="sg-tool sg-icon" data-act="help" title={T('help.title')} aria-label={T('help.title')} data-i18n-title="help.title" data-i18n-aria="help.title" set:html={ICON.help} />
+    </div>
+
+    <div class="sg-body flex flex-1 min-h-0">
+      <!-- Song details, structure, chords used, stats -->
+      <aside class="sidebar sg-side" aria-label={T('song.details')} data-i18n-aria="song.details">
+        <div class="sg-side-scroll">
+          <!-- Cover art (the single's, or the album's): drop or pick an image, then see it as a mockup -->
+          <section class="sg-panel sg-cover-panel">
+            <h2 class="sg-panel-title" data-i18n="cov.title">{T('cov.title')}</h2>
+            <div class="sg-cover" id="sg-cover" role="button" tabindex="0" title={T('cov.pick')} aria-label={T('cov.pick')} data-i18n-title="cov.pick" data-i18n-aria="cov.pick">
+              <img id="sg-cover-img" alt="" hidden />
+              <span class="sg-cover-empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="9" cy="9" r="2"/><path d="m21 15-3.1-3.1a2 2 0 0 0-2.8 0L6 21"/></svg>
+                <span data-i18n="cov.empty">{T('cov.empty')}</span>
+              </span>
+              <span class="sg-cover-drop" aria-hidden="true" data-i18n="cov.drop">{T('cov.drop')}</span>
+            </div>
+            <div class="sg-cover-actions">
+              <button type="button" class="btn btn-primary sg-cover-mockup" data-cover-act="mockup"><span data-i18n="cov.mockup">{T('cov.mockup')}</span></button>
+              <button type="button" class="sg-tool" data-cover-act="change" data-i18n="cov.change">{T('cov.change')}</button>
+              <button type="button" class="sg-tool" data-cover-act="remove" data-i18n="cov.remove" hidden>{T('cov.remove')}</button>
+            </div>
+            <input type="file" id="cover-input" accept="image/png,image/jpeg,image/webp,image/gif" hidden />
+          </section>
+          <!-- Albums / EPs only: album details and the tracklist -->
+          <section class="sg-panel sg-album" id="sg-album" hidden>
+            <h2 class="sg-panel-title"><span set:html={ICON.disc} /><span id="sg-album-kind"></span></h2>
+            <div class="sg-meta">
+              <label class="sg-meta-wide"><span data-i18n="mus.albumTitle">{T('mus.albumTitle')}</span><input class="text-input" data-album="title" placeholder=" " autocomplete="off" spellcheck="false" maxlength="120" /></label>
+              <label class="sg-meta-wide"><span data-i18n="mus.artist">{T('mus.artist')}</span><input class="text-input" data-album="artist" placeholder=" " autocomplete="off" spellcheck="false" maxlength="120" /></label>
+              <label><span data-i18n="mus.type">{T('mus.type')}</span>
+                <select class="text-input" data-album="type">
+                  <option value="album" data-i18n="mus.kind.album">{T('mus.kind.album')}</option>
+                  <option value="ep" data-i18n="mus.kind.ep">{T('mus.kind.ep')}</option>
+                </select>
+              </label>
+              <label><span data-i18n="mus.year">{T('mus.year')}</span><input class="text-input" data-album="year" placeholder=" " inputmode="numeric" autocomplete="off" maxlength="12" /></label>
+            </div>
+            <div class="sg-tracks-head">
+              <h3 class="sg-sub-title" data-i18n="mus.tracklist">{T('mus.tracklist')}</h3>
+              <button type="button" class="sg-switch" data-album-act="toggle-scroll" role="switch" aria-checked="true" title={T('mus.scrollTip')} data-i18n-title="mus.scrollTip">
+                <span class="sg-switch-track" aria-hidden="true"><i></i></span><span data-i18n="mus.scrollToggle">{T('mus.scrollToggle')}</span>
+              </button>
+            </div>
+            <ol id="sg-tracks" class="sg-tracks"></ol>
+            <div class="sg-track-actions">
+              <button type="button" class="sg-tool" data-album-act="new-track"><span set:html={ICON.up} /><span data-i18n="mus.mNewTrack">{T('mus.mNewTrack')}</span></button>
+              <button type="button" class="sg-tool" data-album-act="add-singles"><span set:html={ICON.chords} /><span data-i18n="mus.addSingles">{T('mus.addSingles')}</span></button>
+            </div>
+          </section>
+          <section class="sg-panel">
+            <h2 class="sg-panel-title" data-i18n="song.details">{T('song.details')}</h2>
+            <div class="sg-meta">
+              <label class="sg-meta-wide"><span data-i18n="song.writer">{T('song.writer')}</span><input class="text-input" data-meta="writer" placeholder=" " autocomplete="off" spellcheck="false" /></label>
+              <label><span data-i18n="song.key">{T('song.key')}</span><input class="text-input" data-meta="key" placeholder="G" autocomplete="off" spellcheck="false" maxlength="12" /></label>
+              <label><span>BPM</span><input class="text-input" data-meta="bpm" placeholder="90" inputmode="numeric" autocomplete="off" maxlength="8" /></label>
+              <label><span data-i18n="song.time">{T('song.time')}</span><input class="text-input" data-meta="time" placeholder="4/4" autocomplete="off" maxlength="8" /></label>
+              <label><span>Capo</span><input class="text-input" data-meta="capo" placeholder="0" inputmode="numeric" autocomplete="off" maxlength="4" /></label>
+              <label class="sg-meta-wide"><span data-i18n="song.lang">{T('song.lang')}</span>
+                <select class="text-input" data-meta="lang">
+                  <option value="id">Bahasa Indonesia</option>
+                  <option value="en">English</option>
+                </select>
+              </label>
+            </div>
+          </section>
+          <section class="sg-panel">
+            <h2 class="sg-panel-title" data-i18n="song.structure">{T('song.structure')}</h2>
+            <ol id="sg-structure" class="sg-structure"></ol>
+          </section>
+          <section class="sg-panel">
+            <h2 class="sg-panel-title" data-i18n="song.chordsUsed">{T('song.chordsUsed')}</h2>
+            <div id="sg-chord-list" class="sg-chord-list"></div>
+          </section>
+          <section class="sg-panel">
+            <h2 class="sg-panel-title" data-i18n="tab.stats">{T('tab.stats')}</h2>
+            <dl id="sg-stats" class="sg-stats"></dl>
+          </section>
+        </div>
+      </aside>
+
+      <main class="desk sg-desk flex-1 overflow-auto">
+        <!-- One paper per song (song-app.ts): the title on top, the sheet, its sticky notes.
+             Albums in scroll mode show every song here, one after another. -->
+        <div id="sg-stage" class="sg-stage"></div>
+      </main>
+    </div>
+
+    <footer class="statusbar shrink-0">
+      <span id="st-section"></span>
+      <span id="st-syl" class="hidden sm:inline"></span>
+      <span id="st-scheme" class="hidden md:inline"></span>
+      <span id="st-words" class="ml-auto"></span>
+      <button type="button" id="btn-paper" class="st-btn" title={T('st.paperTip')} data-i18n-title="st.paperTip">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 2h9l5 5v15H6z"/><path d="M12 9v9"/><path d="M12 9a4.5 4.5 0 0 1 0 9" fill="currentColor"/></svg>
+        <span><span data-i18n="st.paper">{T('st.paper')}</span>: <b id="st-paper">{T('st.paperAuto')}</b></span>
+      </button>
+    </footer>
+
+    <!-- Export -->
+    <dialog id="dlg-song-export" class="dialog" aria-labelledby="sx-title">
+      <form id="form-song-export" method="dialog" class="grid gap-3">
+        <h2 id="sx-title" class="text-lg font-semibold" data-i18n="song.exportTitle">{T('song.exportTitle')}</h2>
+        <fieldset class="sg-scope" data-only="album" hidden>
+          <label class="sg-radio"><input type="radio" name="scope" value="album" checked /><span data-i18n="mus.scopeAlbum">{T('mus.scopeAlbum')}</span></label>
+          <label class="sg-radio"><input type="radio" name="scope" value="track" /><span data-i18n="mus.scopeTrack">{T('mus.scopeTrack')}</span></label>
+        </fieldset>
+        <fieldset class="sg-radio-group">
+          <label class="sg-radio"><input type="radio" name="fmt" value="pdf" checked /><span><b>PDF</b> <span class="text-muted" data-i18n="song.pdfDesc">{T('song.pdfDesc')}</span></span></label>
+          <label class="sg-radio"><input type="radio" name="fmt" value="txt" /><span><b data-i18n="ex.txt">{T('ex.txt')}</b> <span class="text-muted">.txt</span></span></label>
+          <label class="sg-radio"><input type="radio" name="fmt" value="terra" /><span><b>Terra Script</b> <span class="text-muted" data-i18n="song.terraDesc">{T('song.terraDesc')}</span></span></label>
+        </fieldset>
+        <label class="rc-check"><input type="checkbox" name="chords" checked /><span data-i18n="song.withChords">{T('song.withChords')}</span></label>
+        <div class="flex justify-end gap-2">
+          <button type="button" class="btn" data-close data-i18n="proj.cancel">{T('proj.cancel')}</button>
+          <button type="submit" class="btn btn-primary" value="export"><span data-i18n="ex.go">{T('ex.go')}</span></button>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Cover art mockups (drawn on a canvas by cover-mockup.ts, saved as PNG) -->
+    <dialog id="dlg-mockup" class="dialog mockup-dialog" aria-labelledby="mk-title">
+      <form method="dialog" class="grid gap-3">
+        <div class="mockup-top">
+          <h2 id="mk-title" class="text-lg font-semibold" data-i18n="cov.mockupTitle">{T('cov.mockupTitle')}</h2>
+          <div class="mockup-chips" role="radiogroup" aria-label={T('cov.style')} data-i18n-aria="cov.style">
+            {(['vinyl', 'cd', 'phone', 'cover'] as const).map((k, i) => (
+              <label class="mockup-chip"><input type="radio" name="kind" value={k} checked={i === 0} /><span data-i18n={`cov.k.${k}`}>{T(`cov.k.${k}` as Key)}</span></label>
+            ))}
+          </div>
+        </div>
+        <div class="mockup-stage"><canvas id="mockup-canvas" class="mockup-canvas" aria-label={T('cov.mockupTitle')} data-i18n-aria="cov.mockupTitle"></canvas></div>
+        <div class="mockup-bottom">
+          <div class="mockup-chips" role="radiogroup" aria-label={T('cov.bg')} data-i18n-aria="cov.bg">
+            <span class="mockup-cap" data-i18n="cov.bg">{T('cov.bg')}</span>
+            {(['blur', 'light', 'dark'] as const).map((b, i) => (
+              <label class="mockup-chip"><input type="radio" name="bg" value={b} checked={i === 0} /><span data-i18n={`cov.bg.${b}`}>{T(`cov.bg.${b}` as Key)}</span></label>
+            ))}
+          </div>
+          <div class="flex gap-2 ml-auto">
+            <button type="button" class="btn" data-close data-i18n="btn.close">{T('btn.close')}</button>
+            <button type="button" class="btn btn-primary btn-icon" data-mockup-save>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+              <span data-i18n="cov.savePng">{T('cov.savePng')}</span>
+            </button>
+          </div>
+        </div>
+      </form>
+    </dialog>
+
+    <!-- Shortcuts -->
+    <dialog id="dlg-song-help" class="dialog dialog-wide">
+      <form method="dialog">
+        <h2 class="text-lg font-semibold mb-3" data-i18n="help.title">{T('help.title')}</h2>
+        <div class="grid sm:grid-cols-2 gap-x-8 gap-y-1 text-sm">
+          {(
+            [
+              ['song.hNewLine', 'Enter'],
+              ['song.hNewSection', 'Enter'],
+              ['song.hMerge', 'Backspace'],
+              ['song.hChordLane', 'Tab'],
+              ['song.hMoveLine', 'Alt+↑ / Alt+↓'],
+              ['song.hAddSection', 'Alt+1 … Alt+8'],
+              ['mus.hNote', 'Alt+N'],
+              ['help.undo', 'Ctrl+Z / Ctrl+Y'],
+              ['help.save', 'Ctrl+S / Ctrl+Shift+S'],
+              ['song.export', 'Ctrl+Shift+E'],
+              ['help.print', 'Ctrl+P'],
+            ] as [Key, string][]
+          ).map(([k, kbd]) => (
+            <div class="help-row"><span data-i18n={k}>{T(k)}</span><kbd>{kbd}</kbd></div>
+          ))}
+        </div>
+        <p class="text-sm text-muted mt-3" data-i18n="song.hChordTip">{T('song.hChordTip')}</p>
+        <div class="flex justify-end pt-4"><button class="btn btn-primary"><span data-i18n="btn.close">{T('btn.close')}</span></button></div>
+      </form>
+    </dialog>
+
+    <!-- Sticky-note pads: drag one onto the desk (or click it) to stick a note there. -->
+    <div id="sg-note-tray" class="sn-tray" role="group" aria-label={T('mus.trayLabel')} data-i18n-aria="mus.trayLabel">
+      <span class="sn-tray-hint" data-i18n="mus.trayHint">{T('mus.trayHint')}</span>
+      <div class="sn-pads">
+        {['yellow', 'pink', 'blue', 'green', 'purple'].map((c) => (
+          <button type="button" class="sn-pad" data-pad={c} title={T('mus.padTip')} data-i18n-title="mus.padTip" aria-label={T('mus.padTip')} data-i18n-aria="mus.padTip"><i></i><i></i><i></i></button>
+        ))}
+      </div>
+    </div>
+
+    <input id="file-input" type="file" accept=".terra,.tewrite,.json,.pdf,.fountain,.spmd,.txt,text/plain,application/pdf" hidden />
+    <div id="toast" class="toast" role="status" hidden></div>
+    <div id="print-root" aria-hidden="true"></div>
+
+    <script>
+      import '../scripts/song-app';
+    </script>
+  </body>
+</html>

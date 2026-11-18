@@ -1,7 +1,7 @@
 {
   "name": "terra-script",
   "type": "module",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "A free, open-source screenwriting app that runs in the browser or as a Windows desktop app.",
   "license": "MIT",
   "author": "nrvaa",
@@ -27,6 +27,7 @@
     "tauri": "tauri"
   },
   "dependencies": {
+    "@fontsource/caveat": "^5.3.0",
     "@fontsource/courier-prime": "^5.3.0",
     "@fontsource/inter": "^5.3.0",
     "@fontsource/space-grotesk": "^5.3.0",
