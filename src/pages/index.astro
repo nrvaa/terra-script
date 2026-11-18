@@ -12,6 +12,11 @@ import tauriConf from '../../src-tauri/tauri.conf.json';
 
 // Shown next to the download button: always the version and size of the installer being served.
 const APP_VERSION = tauriConf.version;
+/** Release channel shown with the version ("Beta 1.0.4"); set to '' for a stable release. */
+const RELEASE_CHANNEL = 'Beta';
+const VERSION_LABEL = [RELEASE_CHANNEL, APP_VERSION].filter(Boolean).join(' ');
+/** The name the installer is saved under, e.g. TerraScript-Setup-Beta-1.0.4.exe. */
+const INSTALLER_NAME = `TerraScript-Setup-${VERSION_LABEL.replace(/\s+/g, '-')}.exe`;
 let installerSize = '';
 try {
   installerSize = `${(fs.statSync('public/downloads/TerraScript-Setup.exe').size / 1048576).toFixed(1)} MB`;
@@ -213,14 +218,14 @@ const features: { t: Key; d: Key; b: Key; icon: string }[] = [
           <p class="land-lead" data-i18n="land.lead">{T('land.lead')}</p>
           <div class="land-ctas">
             <a href="/projects" id="cta-main" class="btn btn-primary btn-lg"><span data-i18n="land.start">{T('land.start')}</span></a>
-            <a href="/downloads/TerraScript-Setup.exe" download id="cta-download" class="btn btn-primary btn-lg">
+            <a href="/downloads/TerraScript-Setup.exe" download={INSTALLER_NAME} id="cta-download" class="btn btn-primary btn-lg" title={`Terra Script ${VERSION_LABEL}`}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12m0 0-5-5m5 5 5-5M4 20h16"/></svg>
               <span data-i18n="land.download">{T('land.download')}</span>
             </a>
             <button type="button" id="cta-sample" class="btn btn-lg" data-i18n="land.sample">{T('land.sample')}</button>
           </div>
           <p class="land-dl-note">
-            <span class="land-dl-ver">v{APP_VERSION}</span>
+            <span class="land-dl-ver">{VERSION_LABEL}</span>
             <span>{installerSize && `${installerSize} · `}<span data-i18n="land.downloadNote">{T('land.downloadNote')}</span></span>
           </p>
         </div>

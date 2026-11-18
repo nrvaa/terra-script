@@ -25,6 +25,7 @@ import { hideLoader, initThemeSwitches, syncThemeSwitches, themeTransition } fro
 import { initDesktopPromo } from './desktop-promo';
 import { chooseNewKind, pickAlbumFor, pickSingles } from './music-dialogs';
 import { drawMockup, loadImage, prepareCover, type MockupBg, type MockupKind } from './cover-mockup';
+import type { PdfCover } from './song-pdf';
 import {
   NEXT_SECTION,
   NOTE_COLORS,
@@ -1106,14 +1107,45 @@ exportForm.addEventListener('submit', async () => {
     return;
   }
   const { buildSongPdf, buildAlbumPdf } = await import('./song-pdf');
-  const blob = whole ? buildAlbumPdf(album!, { paper, ...albumOpts(chords) }) : buildSongPdf(doc, { paper, ...textOpts(chords) });
+  // The cover art goes on the first page (a single: beside its title; an album: its cover page).
+  // A single song exported from an album has no cover of its own.
+  const cover = whole || !album ? await coverForPdf() : undefined;
+  const blob = whole ? buildAlbumPdf(album!, { paper, cover, ...albumOpts(chords) }) : buildSongPdf(doc, { paper, cover, ...textOpts(chords) });
   if (await saveFile(`${name}.pdf`, blob, 'application/pdf')) toast(t('song.exported'));
 });
 
-function songPrintHtml(s: SongDoc, title: string): string {
+/** The cover art as a square JPEG (cropped to the centre, at most 1200 px) for the PDF. */
+async function coverForPdf(): Promise<PdfCover | undefined> {
+  const id = coverId();
+  if (!id || !projectId) return undefined;
+  let img = coverImg;
+  if (!img) {
+    const blob = await getImage(projectId, id).catch(() => undefined);
+    if (!blob) return undefined;
+    img = await loadImage(URL.createObjectURL(blob), true).catch(() => null);
+    if (!img) return undefined;
+  }
+  const side = Math.min(img.naturalWidth, img.naturalHeight);
+  const size = Math.min(1200, side);
+  const c = document.createElement('canvas');
+  c.width = size;
+  c.height = size;
+  const ctx = c.getContext('2d')!;
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.drawImage(img, (img.naturalWidth - side) / 2, (img.naturalHeight - side) / 2, side, side, 0, 0, size, size);
+  const jpeg = await new Promise<Blob | null>((r) => c.toBlob(r, 'image/jpeg', 0.9));
+  return jpeg ? { jpeg: new Uint8Array(await jpeg.arrayBuffer()), size } : undefined;
+}
+
+/** The cover as an <img> for printing ('' without one). */
+const printCover = (cls: string) => (coverImgEl.src && !coverImgEl.hidden ? `<img class="${cls}" src="${coverImgEl.src}" alt="">` : '');
+
+function songPrintHtml(s: SongDoc, title: string, withCover = false): string {
   const labels = sectionLabels(s);
   const meta = showChords ? metaLine(s, textOpts(true)) : '';
   return `<div class="sp-print">
+    ${withCover ? printCover('sp-cover') : ''}
     <h1>${esc(title)}</h1>
     ${s.writer.trim() ? `<p class="sp-by">${esc(t('song.by'))} ${esc(s.writer.trim())}</p>` : ''}
     ${meta ? `<p class="sp-meta">${esc(meta)}</p>` : ''}
@@ -1131,9 +1163,19 @@ function songPrintHtml(s: SongDoc, title: string): string {
 function printSong() {
   flushTyping();
   writeBack();
+  // An album starts with a cover page: the cover art, the title and the tracklist.
+  const albumPage = album
+    ? `<div class="sp-print sp-album-page">
+        ${printCover('sp-cover-big')}
+        <p class="sp-kind">${esc(albumLabel())}</p>
+        <h1>${esc(album.title.trim() || t('mus.albumUntitled'))}</h1>
+        ${[album.artist.trim(), album.year.trim()].filter(Boolean).length ? `<p class="sp-by">${esc([album.artist.trim(), album.year.trim()].filter(Boolean).join(' · '))}</p>` : ''}
+        <ol class="sp-tracks">${album.tracks.map((s) => `<li>${esc(s.title.trim() || t('song.untitled'))}</li>`).join('')}</ol>
+      </div>`
+    : '';
   $('#print-root').innerHTML = album
-    ? album.tracks.map((s, i) => songPrintHtml(s, `${i + 1}. ${s.title.trim() || t('song.untitled')}`)).join('')
-    : songPrintHtml(doc, doc.title.trim() || t('song.untitled'));
+    ? albumPage + album.tracks.map((s, i) => songPrintHtml(s, `${i + 1}. ${s.title.trim() || t('song.untitled')}`)).join('')
+    : songPrintHtml(doc, doc.title.trim() || t('song.untitled'), true);
   $('#page-style').textContent = `@page { size: ${paper === 'a4' ? 'A4' : 'letter'}; margin: 0.75in; }`;
   window.print();
 }

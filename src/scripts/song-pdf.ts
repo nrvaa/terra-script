@@ -24,6 +24,22 @@ export interface SongPdfOptions {
   key: string;
   capo: string;
   untitled: string;
+  /** Cover art to put on the first page (a square JPEG). */
+  cover?: PdfCover;
+}
+
+/** A square JPEG, embedded as is (the PDF reader decodes it: DCTDecode). */
+export interface PdfCover {
+  jpeg: Uint8Array;
+  size: number;
+}
+
+/** Bytes as hex text, so the file stays plain text and every offset in it stays right. */
+function hex(bytes: Uint8Array): string {
+  const digits = '0123456789abcdef';
+  const out = new Array<string>(bytes.length);
+  for (let i = 0; i < bytes.length; i++) out[i] = digits[bytes[i] >> 4] + digits[bytes[i] & 15];
+  return out.join('');
 }
 
 export interface AlbumPdfOptions extends SongPdfOptions {
@@ -76,10 +92,20 @@ class Writer {
   rule() {
     this.ops.push(`0.8 G 0.6 w ${MARGIN} ${num(this.y)} m ${num(this.w - MARGIN)} ${num(this.y)} l S`);
   }
+  cover?: PdfCover;
+  /** Draw the cover art with its bottom-left corner at (x, y), `size` points square, with a thin frame. */
+  image(x: number, y: number, size: number) {
+    if (!this.cover) return;
+    this.ops.push(`q ${num(size)} 0 0 ${num(size)} ${num(x)} ${num(y)} cm /Cv Do Q`);
+    this.ops.push(`0.85 G 0.5 w ${num(x)} ${num(y)} ${num(size)} ${num(size)} re S`);
+  }
 
   /** One song, starting on a fresh page. */
-  song(doc: SongDoc, title: string, o: SongPdfOptions) {
+  song(doc: SongDoc, title: string, o: SongPdfOptions, withCover = false) {
     this.newPage();
+    // A single's cover sits in the top-right corner, beside the title.
+    const coverSize = 92;
+    if (withCover && this.cover) this.image(this.w - MARGIN - coverSize, this.h - MARGIN - coverSize, coverSize);
     this.y -= 20;
     this.text(title, MARGIN, 'HB', 18);
     if (doc.writer.trim()) {
@@ -91,6 +117,8 @@ class Writer {
       this.y -= 14;
       this.text(meta, MARGIN, 'H', 9.5, '0.45 g');
     }
+    // Below the cover, whatever the heading's height.
+    if (withCover && this.cover) this.y = Math.min(this.y, this.h - MARGIN - coverSize);
     this.y -= 10;
     this.rule();
     const labels = sectionLabels(doc);
@@ -125,6 +153,17 @@ class Writer {
     add('<< /Type /Font /Subtype /Type1 /BaseFont /Courier /Encoding /WinAnsiEncoding >>'); // 5
     add('<< /Type /Font /Subtype /Type1 /BaseFont /Courier-Bold /Encoding /WinAnsiEncoding >>'); // 6
     add(`<< /Title ${pdfString(title)} /Creator (Terra Script) /Producer (Terra Script) >>`); // 7
+    let xobj = '';
+    if (this.cover) {
+      const data = hex(this.cover.jpeg) + '>';
+      const n = add(
+        `<< /Type /XObject /Subtype /Image /Width ${this.cover.size} /Height ${this.cover.size} /ColorSpace /DeviceRGB /BitsPerComponent 8 /Filter [/ASCIIHexDecode /DCTDecode] /Length ${data.length} >>
+stream
+${data}
+endstream`,
+      );
+      xobj = ` /XObject << /Cv ${n} 0 R >>`;
+    }
     const kids: number[] = [];
     const total = this.pages.length;
     this.pages.forEach((p, i) => {
@@ -132,7 +171,7 @@ class Writer {
       const footOps = foot ? [`BT 0.5 g /H 8 Tf ${num(this.w - MARGIN - textWidth(foot, 8))} ${MARGIN - 22} Td ${pdfString(foot)} Tj ET`] : [];
       const stream = [...p, ...footOps].join('\n');
       const content = add(`<< /Length ${stream.length} >>\nstream\n${stream}\nendstream`);
-      kids.push(add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.w} ${this.h}] /Resources << /Font << /H 3 0 R /HB 4 0 R /C 5 0 R /CB 6 0 R >> >> /Contents ${content} 0 R >>`));
+      kids.push(add(`<< /Type /Page /Parent 2 0 R /MediaBox [0 0 ${this.w} ${this.h}] /Resources << /Font << /H 3 0 R /HB 4 0 R /C 5 0 R /CB 6 0 R >>${xobj} >> /Contents ${content} 0 R >>`));
     });
     objs[0] = '<< /Type /Catalog /Pages 2 0 R >>';
     objs[1] = `<< /Type /Pages /Kids [${kids.map((k) => `${k} 0 R`).join(' ')}] /Count ${kids.length} >>`;
@@ -153,17 +192,24 @@ class Writer {
 
 export function buildSongPdf(doc: SongDoc, o: SongPdfOptions): Blob {
   const w = new Writer(o.paper);
+  w.cover = o.cover;
   const title = doc.title.trim() || o.untitled;
-  w.song(doc, title, o);
+  w.song(doc, title, o, true);
   return w.build(title);
 }
 
 /** The album as one PDF: a cover page with the tracklist, then each song. */
 export function buildAlbumPdf(a: AlbumDoc, o: AlbumPdfOptions): Blob {
   const w = new Writer(o.paper);
+  w.cover = o.cover;
   const title = a.title.trim() || o.albumUntitled;
   w.newPage();
-  w.y -= 150;
+  if (w.cover) {
+    // The cover art, big, at the top of the cover page.
+    const size = 300;
+    w.image(MARGIN, w.h - MARGIN - size, size);
+    w.y = w.h - MARGIN - size - 34;
+  } else w.y -= 150;
   w.text(o.typeLabel.toUpperCase(), MARGIN, 'HB', 10, `${ACCENT} rg`);
   w.y -= 30;
   w.text(title, MARGIN, 'HB', 26);
